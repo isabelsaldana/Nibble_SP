@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "694812612533",
+    "project_id": "nibble-97e84",
+    "storage_bucket": "nibble-97e84.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:694812612533:android:49d5048334db2e97bdebfc",
+        "android_client_info": {
+          "package_name": "com.example.nibble_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_pd7fMAWq0HciHQ2M09zV3pyOIfbPj8w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:694812612533:android:eb68b6e0361e695fbdebfc",
+        "android_client_info": {
+          "package_name": "com.example.nibble_app1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_pd7fMAWq0HciHQ2M09zV3pyOIfbPj8w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
