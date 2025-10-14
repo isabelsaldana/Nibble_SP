@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // for TextInput.finishAutofillContext
 import 'package:firebase_auth/firebase_auth.dart';
-import 'home_page.dart';
 import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
