@@ -7,10 +7,13 @@ import 'package:firebase_core/firebase_core.dart';
 // Import the auto-generated Firebase configuration file
 import 'firebase_options.dart';
 
-// Import pages ive created
+// Import pages I've created
 import 'login_page.dart';
 import 'signup_page.dart';
 import 'home_page.dart';
+
+// Toggle Sign-Up preview at runtime (default = false, so Login stays first)
+const bool kSignupPreview = bool.fromEnvironment('SIGNUP_PREVIEW');
 
 void main() async {
   // Ensure widgets and Firebase can initialize before running the app
@@ -39,8 +42,14 @@ class NibbleApp extends StatelessWidget {
         useMaterial3: true,
       ),
 
-      // Start screen of the app
-      home: const LoginPage(), // Shows LoginPage first
+      // Default behavior: show LoginPage first.
+      // If you pass SIGNUP_PREVIEW=true at runtime, it will open SignUpPage instead.
+      initialRoute: kSignupPreview ? '/signup' : '/login',
+      routes: {
+        '/login': (_) => const LoginPage(),
+        '/signup': (_) => const SignUpPage(),
+        '/home'  : (_) => const HomePage(),
+      },
     );
   }
 }
