@@ -16,6 +16,7 @@ class _AddRecipePageState extends State<AddRecipePage> {
   final _titleController = TextEditingController();
   final _ingredientsController = TextEditingController();
   final _stepsController = TextEditingController();
+  final _tagsController = TextEditingController();
   File? _imageFile;
   bool _isLoading = false;
 
@@ -46,16 +47,31 @@ class _AddRecipePageState extends State<AddRecipePage> {
 
       // Upload image to Firebase Storage
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final ref = FirebaseStorage.instance.ref().child('recipe_images/$fileName');
+      final ref =
+          FirebaseStorage.instance.ref().child('recipe_images/$fileName');
       await ref.putFile(_imageFile!);
       final imageUrl = await ref.getDownloadURL();
+
+      // Prepare data for Firestore
+      final ingredients = _ingredientsController.text
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      final tags = _tagsController.text
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .where((s) => s.isNotEmpty)
+          .toList();
 
       // Save recipe data in Firestore
       await FirebaseFirestore.instance.collection('recipes').add({
         'userId': user.uid,
         'title': _titleController.text.trim(),
-        'ingredients': _ingredientsController.text.split(',').map((s) => s.trim()).toList(),
+        'ingredients': ingredients,
         'steps': _stepsController.text.trim(),
+        'tags': tags,
         'imageUrl': imageUrl,
         'isPublic': true,
         'createdAt': FieldValue.serverTimestamp(),
@@ -70,6 +86,7 @@ class _AddRecipePageState extends State<AddRecipePage> {
       _titleController.clear();
       _ingredientsController.clear();
       _stepsController.clear();
+      _tagsController.clear();
       setState(() => _imageFile = null);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -103,7 +120,8 @@ class _AddRecipePageState extends State<AddRecipePage> {
                   color: Colors.grey[300],
                   borderRadius: BorderRadius.circular(12),
                   image: _imageFile != null
-                      ? DecorationImage(image: FileImage(_imageFile!), fit: BoxFit.cover)
+                      ? DecorationImage(
+                          image: FileImage(_imageFile!), fit: BoxFit.cover)
                       : null,
                 ),
                 child: _imageFile == null
@@ -118,13 +136,20 @@ class _AddRecipePageState extends State<AddRecipePage> {
             ),
             TextField(
               controller: _ingredientsController,
-              decoration: const InputDecoration(labelText: "Ingredients (comma-separated)"),
+              decoration: const InputDecoration(
+                  labelText: "Ingredients (comma-separated)"),
               maxLines: 2,
             ),
             TextField(
               controller: _stepsController,
               decoration: const InputDecoration(labelText: "Steps"),
               maxLines: 4,
+            ),
+            TextField(
+              controller: _tagsController,
+              decoration:
+                  const InputDecoration(labelText: "Tags (comma-separated)"),
+              maxLines: 1,
             ),
             const SizedBox(height: 20),
             _isLoading
