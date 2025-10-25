@@ -21,7 +21,7 @@ class _HomePageState extends State<HomePage> {
     const FeedPage(),
     const AddRecipePage(),
     const SavedRecipesPage(),
-    const ProfilePage(),
+    ProfilePage(),
   ];
 
   void _onItemTapped(int index) {
