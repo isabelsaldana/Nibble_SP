@@ -11,6 +11,9 @@ import 'firebase_options.dart';
 import 'login_page.dart';
 import 'signup_page.dart';
 import 'home_page.dart';
+import 'onboarding_profile_flow.dart';
+import 'profile_page.dart';
+import 'profile_edit.dart';
 
 // Toggle Sign-Up preview at runtime (default = false, so Login stays first)
 const bool kSignupPreview = bool.fromEnvironment('SIGNUP_PREVIEW');
@@ -49,6 +52,8 @@ class NibbleApp extends StatelessWidget {
         '/login': (_) => const LoginPage(),
         '/signup': (_) => const SignUpPage(),
         '/home'  : (_) => const HomePage(),
+        '/profile'      : (_) => ProfilePage(),      
+        '/profile/edit' : (_) => const ProfileEditPage(),  
       },
     );
   }
