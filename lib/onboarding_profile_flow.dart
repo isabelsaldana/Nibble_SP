@@ -1,11 +1,9 @@
+// lib/onboarding_profile_flow.dart
 import 'dart:async';
-import 'dart:typed_data';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html; // web picker
-
-import 'package:crop_your_image/crop_your_image.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'user_service.dart';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Inclusive option catalogs (centralized)
@@ -71,10 +69,8 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
   // Step 0 — name
   final _nameCtrl = TextEditingController();
 
-  // Step 1 — handle + avatar
+  // Step 1 — handle (no avatar here)
   final _usernameCtrl = TextEditingController();
-  ImageProvider? _avatarPreview;      // shown in CircleAvatar
-  Uint8List? _avatarBytes;            // cropped PNG/JPG bytes for upload
   Timer? _userCheckDebounce;
   bool? _userAvailable;               // null=checking, true ok, false taken
 
@@ -134,135 +130,27 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
   bool get _step4Valid => _favCuisines.isNotEmpty;
   bool get _step5Valid => true;
 
-  /* ---- username availability (debounced mock; wire to Firestore later) ---- */
+  /* ---- username availability (debounced, real check) ---- */
   void _checkUsername(String raw) {
-    final s = raw.trim();
+    final s = raw.trim().toLowerCase();
     _userCheckDebounce?.cancel();
     setState(() => _userAvailable = null);
+
     _userCheckDebounce = Timer(const Duration(milliseconds: 400), () async {
-      // TODO: replace with real availability check
-      final taken = s.length < 3 || s.contains('nibble');
-      if (!mounted) return;
-      setState(() => _userAvailable = !taken);
+      try {
+        if (s.length < 3 || !RegExp(r'^[a-z0-9_]+$').hasMatch(s)) {
+          if (!mounted) return;
+          setState(() => _userAvailable = false);
+          return;
+        }
+        final snap = await FirebaseFirestore.instance.collection('usernames').doc(s).get();
+        if (!mounted) return;
+        setState(() => _userAvailable = !snap.exists);
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _userAvailable = false);
+      }
     });
-  }
-
-  /* ---------------- avatar picker + cropper (web) ---------------- */
-
-  void _pickAvatar() async {
-    if (!kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Native picker coming soon (iOS/Android).')),
-      );
-      return;
-    }
-    final input = html.FileUploadInputElement()..accept = 'image/*';
-    input.click();
-    await input.onChange.first;
-    final file = input.files?.first;
-    if (file == null) return;
-
-    final reader = html.FileReader();
-    reader.readAsArrayBuffer(file); // raw bytes for cropper
-    await reader.onLoadEnd.first;
-
-    final bytes = Uint8List.view(reader.result as ByteBuffer);
-    if (!mounted) return;
-    _showCropper(bytes); // open crop dialog
-  }
-
-  // v1.x-compatible crop dialog (circle UI + pinch/zoom/drag)
-  Future<void> _showCropper(Uint8List originalBytes) async {
-    final controller = CropController();
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        bool saving = false;
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-              contentPadding: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              content: SizedBox(
-                width: 520,
-                height: 520,
-                child: Column(
-                  children: [
-                    Container(
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.all(12),
-                      child: const Text('Adjust photo',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Crop(
-                          controller: controller,
-                          image: originalBytes,
-                          // v1: keep it simple — circle mask implies a square crop
-                          withCircleUi: true,
-                          baseColor: Colors.black12,
-                          maskColor: Colors.black.withOpacity(0.5),
-                          interactive: true,
-                          // v1: returns raw bytes directly
-                          onCropped: (Uint8List data) {
-                            _avatarBytes = data;
-                            _avatarPreview = MemoryImage(data);
-                            if (context.mounted) {
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Photo updated')),
-                              );
-                              setState(() {}); // refresh avatar preview
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: Row(
-                        children: [
-                          TextButton(
-                            onPressed: saving ? null : () => Navigator.pop(context),
-                            child: const Text('Cancel'),
-                          ),
-                          const Spacer(),
-                          // v1: no undo/redo API — keep UI simple
-                          FilledButton.icon(
-                            onPressed: saving
-                                ? null
-                                : () async {
-                                    setState(() => saving = true);
-                                    controller.crop(); // bytes delivered in onCropped above
-                                    await Future<void>.delayed(const Duration(milliseconds: 100));
-                                    if (context.mounted) setState(() => saving = false);
-                                  },
-                            icon: saving
-                                ? const SizedBox(
-                                    width: 16, height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.check),
-                            label: const Text('Use photo'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   /* ---------------- nav ---------------- */
@@ -300,30 +188,49 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
     if (!_step5Valid) return;
     setState(() => _saving = true);
 
-    final payload = {
-      'displayName': _nameCtrl.text.trim(),
-      'username': _usernameCtrl.text.trim(),
-      'avatarBytes_len': _avatarBytes?.length ?? 0, // placeholder
-      'household': _household,
-      'goal': _goal,
-      'skill': _skill,
-      'cookTimes': _cookTimes.toList(),
-      'gear': _gear.toList(),
-      'favoriteCuisines': _favCuisines.toList(),
-      'dietary': _dietary.toList(),
-      'allergens': _allergens.toList(),
-      'units': _units,
-    };
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw StateError('You are signed out. Please log in again.');
+      }
 
-    await Future<void>.delayed(const Duration(milliseconds: 500));
-    debugPrint('ONBOARDING_PAYLOAD => $payload');
+      final service = UserService();
 
-    if (!mounted) return;
-    setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile saved — welcome to Nibble!')),
-    );
-    Navigator.pushReplacementNamed(context, '/home');
+      // 1) Reserve username (throws if taken)
+      final handle = _usernameCtrl.text.trim().toLowerCase();
+      await service.reserveUsername(handle);
+
+      // 2) Save full profile (no photoURL here)
+      await service.upsertProfile({
+        'displayName': _nameCtrl.text.trim(),
+        'username': handle,
+        'household': _household,
+        'goal': _goal,
+        'skill': _skill,
+        'cookTimes': _cookTimes.toList(),
+        'gear': _gear.toList(),
+        'favoriteCuisines': _favCuisines.toList(),
+        'dietary': _dietary.toList(),
+        'allergens': _allergens.toList(),
+        'units': _units,
+        'onboardingComplete': true,
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile saved — welcome to Nibble!')),
+      );
+
+      // 3) Go to Profile/Home
+      Navigator.pushNamedAndRemoveUntil(context, '/profile', (_) => false);
+      // or: Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -351,6 +258,7 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
           child: Text(titles[_index], key: ValueKey(_index)),
         ),
         centerTitle: true,
+        // 🔕 No more logout here — settings/logout lives on Profile → Settings
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -415,12 +323,6 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
                     _checkUsername(v);
                     setState(() {});
                   },
-                  onPickAvatar: _pickAvatar,
-                  onReadjust: _avatarBytes == null
-                      ? null
-                      : () => _showCropper(_avatarBytes!),
-                  hasAvatar: _avatarBytes != null,
-                  avatarPreview: _avatarPreview,
                 ),
                 _StepHouseholdGoal(
                   household: _household,
@@ -534,7 +436,7 @@ class _StepName extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _StepScaffold(
-      title: "hey, I’m Nibble 👋",
+      title: "Welcome to Nibble!",
       subtitle: "what should I call you?",
       child: TextField(
         controller: nameCtrl,
@@ -542,7 +444,7 @@ class _StepName extends StatelessWidget {
         textInputAction: TextInputAction.done,
         decoration: InputDecoration(
           labelText: 'Display name',
-          hintText: 'e.g., Maribel',
+          hintText: 'e.g., Amy',
           prefixIcon: const Icon(Icons.person_outline),
           filled: true,
           border: const OutlineInputBorder(),
@@ -556,7 +458,7 @@ class _StepName extends StatelessWidget {
   }
 }
 
-/* ───────────────── Step 1: Handle & photo ───────────────── */
+/* ───────────────── Step 1: Handle (no photo here) ───────────────── */
 
 class _StepHandle extends StatelessWidget {
   const _StepHandle({
@@ -564,20 +466,12 @@ class _StepHandle extends StatelessWidget {
     required this.usernameError,
     required this.userAvailable,
     required this.onChanged,
-    required this.onPickAvatar,
-    required this.onReadjust,
-    required this.hasAvatar,
-    required this.avatarPreview,
   });
 
   final TextEditingController usernameCtrl;
   final String? usernameError;
   final bool? userAvailable; // nullable
   final ValueChanged<String> onChanged;
-  final VoidCallback onPickAvatar;
-  final VoidCallback? onReadjust;     // null until a photo exists
-  final bool hasAvatar;
-  final ImageProvider? avatarPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -596,48 +490,17 @@ class _StepHandle extends StatelessWidget {
     return _StepScaffold(
       title: "claim your kitchen handle",
       subtitle: "lowercase, numbers and underscore only",
-      child: Column(
-        children: [
-          Center(
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 44,
-                  backgroundImage: avatarPreview,
-                  child: avatarPreview == null
-                      ? const Icon(Icons.person, size: 44)
-                      : null,
-                ),
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, children: [
-                  OutlinedButton.icon(
-                    onPressed: onPickAvatar,
-                    icon: const Icon(Icons.camera_alt_outlined),
-                    label: const Text('Upload photo'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: onReadjust,
-                    icon: const Icon(Icons.tune),
-                    label: const Text('Re-adjust'),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: usernameCtrl,
-            onChanged: onChanged,
-            decoration: InputDecoration(
-              prefixText: '@',
-              labelText: 'Username',
-              helperText: '3–20 chars • lowercase • numbers • _',
-              border: const OutlineInputBorder(),
-              errorText: usernameError,
-              suffixIcon: suffix,
-            ),
-          ),
-        ],
+      child: TextField(
+        controller: usernameCtrl,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          prefixText: '@',
+          labelText: 'Username',
+          helperText: '3–20 chars • lowercase • numbers • _',
+          border: const OutlineInputBorder(),
+          errorText: usernameError,
+          suffixIcon: suffix,
+        ),
       ),
     );
   }
@@ -740,7 +603,7 @@ class _StepCook extends StatelessWidget {
   Widget build(BuildContext context) {
     return _StepScaffold(
       title: "how you like to cook",
-      subtitle: "so I don’t send you soufflés on a Monday 😅",
+      subtitle: "so I don’t send you soufflés on a Monday ",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

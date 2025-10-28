@@ -53,7 +53,17 @@ class ProfilePage extends StatelessWidget {
         print('ProfilePage photoURL => $photo  (busted => $bustedUrl)');
 
         return Scaffold(
-          appBar: AppBar(title: const Text('Profile'), centerTitle: true),
+          appBar: AppBar(
+            title: const Text('Profile'),
+            centerTitle: true,
+            actions: [
+              IconButton(
+                tooltip: 'Settings',
+                icon: const Icon(Icons.settings),
+                onPressed: () => Navigator.pushNamed(context, '/settings'),
+              ),
+            ],
+          ),
           body: CustomScrollView(
             slivers: [
               SliverToBoxAdapter(

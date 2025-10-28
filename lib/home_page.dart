@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart'; // 👈 add this
 import 'login_page.dart';
 import 'feed_page.dart';
 import 'add_recipe_page.dart';
@@ -24,33 +25,30 @@ class _HomePageState extends State<HomePage> {
     ProfilePage(),
   ];
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  Future<void> _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginPage()),
-    );
-  }
+  void _onItemTapped(int index) => setState(() => _selectedIndex = index);
 
   @override
   Widget build(BuildContext context) {
+    const brandBrown = Color(0xFF6B3E2E); // warm brown (tweak if you want)
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Nibble 🍽️"),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _logout(context),
-          ),
-        ],
-      ),
+      appBar: _selectedIndex == 0
+          ? AppBar(
+              centerTitle: false,            // left aligned
+              titleSpacing: 16,              // a little left padding
+              toolbarHeight: 68,             // taller bar so the text feels bigger
+              elevation: 0,
+              title: Text(
+                'Nibble',
+                style: GoogleFonts.playfairDisplay(  // try also: lobsterTwo, merriweather, montserrat, dmSerifDisplay
+                  fontSize: 34,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .4,
+                  color: brandBrown,
+                ),
+              ),
+            )
+          : null,
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
@@ -59,22 +57,10 @@ class _HomePageState extends State<HomePage> {
         unselectedItemColor: Colors.grey,
         onTap: _onItemTapped,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: "Feed",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            label: "Add",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bookmark_outline),
-            label: "Saved",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            label: "Profile",
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Feed"),
+          BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline), label: "Add"),
+          BottomNavigationBarItem(icon: Icon(Icons.bookmark_outline), label: "Saved"),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: "Profile"),
         ],
       ),
     );
