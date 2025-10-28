@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // for TextInput.finishAutofillContext
 import 'package:firebase_auth/firebase_auth.dart';
+
 import 'signup_page.dart';
+import 'auth_gate.dart'; // <-- NEW: route through the gate after login
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -59,10 +61,12 @@ class _LoginPageState extends State<LoginPage> {
       TextInput.finishAutofillContext(shouldSave: true);
 
       if (!mounted) return;
-      // Use named route to stay consistent with main.dart routes
-      Navigator.pushReplacementNamed(context, '/home');
-      // If you prefer your original navigation:
-      // Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));
+
+      // 🔑 Route via AuthGate so it decides: Onboarding vs Home
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthGate()),
+      );
     } on FirebaseAuthException catch (e) {
       String msg = 'Login failed';
       switch (e.code) {
@@ -98,7 +102,9 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     final submitBtnChild = isLoading
         ? const SizedBox(
-            width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            width: 22, height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          )
         : const Text('Login', style: TextStyle(color: Colors.white));
 
     return Scaffold(
@@ -115,7 +121,7 @@ class _LoginPageState extends State<LoginPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'Welcome to Nibble 👩🏻‍🍳',
+                      'Welcome to Nibble',
                       style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 40),

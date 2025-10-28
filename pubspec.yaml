@@ -43,6 +43,7 @@ dependencies:
   crop_your_image: ^1.0.6
   image_cropper: ^11.0.0
   image_cropper_for_web: ^7.0.0
+  google_fonts: ^6.3.2
 
 dev_dependencies:
   flutter_test:

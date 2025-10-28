@@ -1,6 +1,8 @@
+// lib/signup_page.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // <-- for TextInput.finishAutofillContext
+import 'package:flutter/services.dart'; // TextInput.finishAutofillContext
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ NEW
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -94,19 +96,29 @@ class _SignUpPageState extends State<SignUpPage> {
     final password = _passwordCtrl.text;
 
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      // 1) Create auth user
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // Ask the platform to save autofill data (iOS/Android; harmless on web)
+      // 2) Seed minimal Firestore user doc so AuthGate knows onboarding is needed once
+      final uid = cred.user!.uid;
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'email': email,
+        'onboardingComplete': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // 3) Close autofill context (safe on web too)
       TextInput.finishAutofillContext(shouldSave: true);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created! Please log in.')),
-      );
-      Navigator.of(context).pushReplacementNamed('/login');
+
+      // 4) Send them to onboarding (one-time flow)
+      Navigator.of(context).pushReplacementNamed('/onboarding');
+
     } on FirebaseAuthException catch (e) {
       String msg = 'Sign up failed';
       switch (e.code) {
@@ -122,6 +134,8 @@ class _SignUpPageState extends State<SignUpPage> {
         case 'operation-not-allowed':
           msg = 'Email/password sign-in is disabled in Firebase.';
           break;
+        default:
+          msg = e.message ?? msg;
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -150,7 +164,7 @@ class _SignUpPageState extends State<SignUpPage> {
               child: Form(
                 key: _formKey,
                 autovalidateMode: AutovalidateMode.onUserInteraction,
-                child: AutofillGroup( // <-- wrap fields so platforms see them together
+                child: AutofillGroup(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -165,7 +179,6 @@ class _SignUpPageState extends State<SignUpPage> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Email
                       TextFormField(
                         controller: _emailCtrl,
                         keyboardType: TextInputType.emailAddress,
@@ -181,7 +194,6 @@ class _SignUpPageState extends State<SignUpPage> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Password
                       TextFormField(
                         controller: _passwordCtrl,
                         obscureText: _obscurePw,
@@ -205,7 +217,6 @@ class _SignUpPageState extends State<SignUpPage> {
                       ),
                       const SizedBox(height: 6),
 
-                      // Strength hint
                       Text(
                         'Strength: $_strengthLabel',
                         textAlign: TextAlign.right,
@@ -213,7 +224,6 @@ class _SignUpPageState extends State<SignUpPage> {
                       ),
                       const SizedBox(height: 6),
 
-                      // Confirm
                       TextFormField(
                         controller: _confirmCtrl,
                         obscureText: _obscureCf,
@@ -237,7 +247,6 @@ class _SignUpPageState extends State<SignUpPage> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Create account button (disabled until form valid)
                       FilledButton(
                         onPressed: (!_submitting && _isFormValid) ? _submit : null,
                         child: _submitting
