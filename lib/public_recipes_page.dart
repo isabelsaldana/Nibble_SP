@@ -1,52 +1,47 @@
 import 'package:flutter/material.dart';
+import 'models/recipe.dart';
+import 'services/recipe_service.dart';
 
-class PublicRecipesPage extends StatefulWidget {
+class PublicRecipesPage extends StatelessWidget {
   const PublicRecipesPage({super.key});
 
   @override
-  State<PublicRecipesPage> createState() => _PublicRecipesPageState();
-}
-
-class _PublicRecipesPageState extends State<PublicRecipesPage> {
-  @override
   Widget build(BuildContext context) {
+    final svc = RecipeService();
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Public Recipes'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.public,
-              size: 80,
-              color: Colors.grey,
-            ),
-            SizedBox(height: 16),
-            Text(
-              'Explore Public Recipes',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Public recipe browsing functionality coming soon!',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+      appBar: AppBar(title: const Text('Public Recipes')),
+      body: StreamBuilder<List<Recipe>>(
+        stream: svc.publicRecipes(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final items = snap.data ?? [];
+          if (items.isEmpty) {
+            return const Center(child: Text('No public recipes yet.'));
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: items.length,
+            itemBuilder: (_, i) {
+              final r = items[i];
+              return Card(
+                child: ListTile(
+                  leading: (r.imageUrls.isNotEmpty)
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(r.imageUrls.first, width: 48, height: 48, fit: BoxFit.cover),
+                        )
+                      : const Icon(Icons.restaurant_menu),
+                  title: Text(r.title),
+                  subtitle: Text('${r.ingredients.length} ingredients'),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
 }
+

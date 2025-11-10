@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:crop_your_image/crop_your_image.dart';
+import 'pages/trash_page.dart'; 
 
 class ProfileEditPage extends StatefulWidget {
   const ProfileEditPage({super.key});
@@ -42,27 +43,41 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   Future<void> _loadExisting() async {
     final me = FirebaseAuth.instance.currentUser;
-    if (me == null) { setState(() => _loading = false); return; }
+    if (me == null) {
+      setState(() => _loading = false);
+      return;
+    }
 
-    final doc = await FirebaseFirestore.instance.collection('users').doc(me.uid).get();
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(me.uid).get();
     final m = doc.data() ?? {};
 
-    _displayName.text = (m['displayName'] ?? me.displayName ?? '').toString();
-    _username.text    = (m['username'] ?? '').toString();
-    _bio.text         = (m['bio'] ?? '').toString();
+    _displayName.text =
+        (m['displayName'] ?? me.displayName ?? '').toString();
+    _username.text = (m['username'] ?? '').toString();
+    _bio.text = (m['bio'] ?? '').toString();
 
     _skill = (m['skill'] ?? _skill).toString();
     _units = (m['units'] ?? _units).toString();
 
-    _profilePublic  = (m['profilePublic'] ?? _profilePublic) == true;
-    _showSaved      = (m['showSaved'] ?? _showSaved) == true;
+    _profilePublic = (m['profilePublic'] ?? _profilePublic) == true;
+    _showSaved = (m['showSaved'] ?? _showSaved) == true;
     _notifyComments = (m['notifyComments'] ?? _notifyComments) == true;
-    _notifyFollows  = (m['notifyFollows'] ?? _notifyFollows) == true;
-    _notifySaves    = (m['notifySaves'] ?? _notifySaves) == true;
+    _notifyFollows = (m['notifyFollows'] ?? _notifyFollows) == true;
+    _notifySaves = (m['notifySaves'] ?? _notifySaves) == true;
 
-    _dietary ..clear()..addAll(((m['dietary'] ?? const []) as List).map((e) => e.toString()));
-    _allergens..clear()..addAll(((m['allergens'] ?? const []) as List).map((e) => e.toString()));
-    _cuisines ..clear()..addAll(((m['cuisines'] ?? const []) as List).map((e) => e.toString()));
+    _dietary
+      ..clear()
+      ..addAll(((m['dietary'] ?? const []) as List)
+          .map((e) => e.toString()));
+    _allergens
+      ..clear()
+      ..addAll(((m['allergens'] ?? const []) as List)
+          .map((e) => e.toString()));
+    _cuisines
+      ..clear()
+      ..addAll(((m['cuisines'] ?? const []) as List)
+          .map((e) => e.toString()));
 
     _photoURL = (m['photoURL'] ?? me.photoURL)?.toString();
     setState(() => _loading = false);
@@ -70,7 +85,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   @override
   void dispose() {
-    _displayName.dispose(); _username.dispose(); _bio.dispose();
+    _displayName.dispose();
+    _username.dispose();
+    _bio.dispose();
     super.dispose();
   }
 
@@ -85,14 +102,17 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     final s = (v ?? '').trim();
     if (s.length < 3) return 'At least 3 characters';
     if (s.length > 20) return 'Max 20 characters';
-    if (!RegExp(r'^[a-z0-9_]+$').hasMatch(s)) return 'Use lowercase, numbers, _';
+    if (!RegExp(r'^[a-z0-9_]+$').hasMatch(s)) {
+      return 'Use lowercase, numbers, _';
+    }
     return null;
   }
 
   // ---- Pick & crop (circle) ----
   Future<void> _pickImage() async {
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 95);
+      final picked = await ImagePicker()
+          .pickImage(source: ImageSource.gallery, imageQuality: 95);
       if (picked == null) return;
       final raw = await picked.readAsBytes();
 
@@ -120,7 +140,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       builder: (ctx) => AlertDialog(
         contentPadding: const EdgeInsets.all(12),
         content: SizedBox(
-          width: 380, height: 460,
+          width: 380,
+          height: 460,
           child: Column(
             children: [
               Expanded(
@@ -132,7 +153,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                     withCircleUi: true,
                     baseColor: Theme.of(ctx).colorScheme.surface,
                     maskColor: Colors.black.withOpacity(.65),
-                    progressIndicator: const Center(child: CircularProgressIndicator()),
+                    progressIndicator:
+                        const Center(child: CircularProgressIndicator()),
                     onCropped: (Uint8List data) {
                       result = data;
                       if (ctx.mounted) Navigator.pop(ctx);
@@ -167,7 +189,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   // ---- Upload PNG + return download URL ----
   Future<String> _uploadPhotoToStorage() async {
     final me = FirebaseAuth.instance.currentUser!;
-    final ref = FirebaseStorage.instance.ref('users/${me.uid}/profile.png'); // PNG
+    final ref =
+        FirebaseStorage.instance.ref('users/${me.uid}/profile.png'); // PNG
     final meta = SettableMetadata(
       contentType: 'image/png',
       cacheControl: 'no-cache, no-store, max-age=0, must-revalidate',
@@ -184,7 +207,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     try {
       final me = FirebaseAuth.instance.currentUser;
       if (me == null) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Not signed in')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Not signed in')),
+        );
         setState(() => _saving = false);
         return;
       }
@@ -210,28 +235,39 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
         'notifyComments': _notifyComments,
         'notifyFollows': _notifyFollows,
         'notifySaves': _notifySaves,
-        'photoURL': newPhotoURL,                  // <- save URL
-        'updatedAt': FieldValue.serverTimestamp() // <- for cache-bust
+        'photoURL': newPhotoURL,
+        'updatedAt': FieldValue.serverTimestamp(), // for cache-bust
       };
 
-      await FirebaseFirestore.instance.collection('users').doc(me.uid)
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(me.uid)
           .set(payload, SetOptions(merge: true));
       await me.updateDisplayName(_displayName.text.trim());
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved ✅')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile saved')),
+      );
       Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e')),
+      );
       setState(() => _saving = false);
     }
   }
 
-  InputDecoration get _input => const InputDecoration(border: OutlineInputBorder(), filled: true);
+  InputDecoration get _input =>
+      const InputDecoration(border: OutlineInputBorder(), filled: true);
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final email = FirebaseAuth.instance.currentUser?.email ?? '';
 
     return Scaffold(
@@ -248,7 +284,11 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           child: FilledButton.icon(
             onPressed: _saving ? null : _save,
             icon: _saving
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.save_outlined),
             label: const Text('Save'),
           ),
@@ -273,13 +313,18 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                             : (_photoURL != null && _photoURL!.isNotEmpty)
                                 ? NetworkImage(_photoURL!) as ImageProvider
                                 : null,
-                        child: (_pickedBytes == null && (_photoURL == null || _photoURL!.isEmpty))
+                        child: (_pickedBytes == null &&
+                                (_photoURL == null ||
+                                    _photoURL!.isEmpty))
                             ? Text(
                                 (_displayName.text.isEmpty
                                         ? (email.isNotEmpty ? email[0] : 'N')
                                         : _displayName.text[0])
                                     .toUpperCase(),
-                                style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               )
                             : null,
                       ),
@@ -289,17 +334,25 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                       onPressed: _saving ? null : _pickImage,
                       icon: const Icon(Icons.camera_alt_outlined),
                       label: const Text('Change photo'),
-                      style: TextButton.styleFrom(foregroundColor: Colors.white),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    Text(email, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w500)),
+                    Text(
+                      email,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                   ],
                 ),
               ),
             ),
 
-            // --- form sections (unchanged) ---
+            // --- form sections ---
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               sliver: SliverToBoxAdapter(
@@ -311,7 +364,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                         children: [
                           TextFormField(
                             controller: _displayName,
-                            decoration: _input.copyWith(labelText: 'Display name'),
+                            decoration:
+                                _input.copyWith(labelText: 'Display name'),
                             validator: _displayNameValidator,
                             textInputAction: TextInputAction.next,
                             onChanged: (_) => setState(() {}),
@@ -321,7 +375,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                             controller: _username,
                             decoration: _input.copyWith(
                               labelText: 'Username',
-                              helperText: '3–20 chars • lowercase • numbers • _',
+                              helperText:
+                                  '3–20 chars • lowercase • numbers • _',
                               prefixText: '@',
                             ),
                             validator: _usernameValidator,
@@ -332,7 +387,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                             controller: _bio,
                             maxLength: 160,
                             maxLines: 3,
-                            decoration: _input.copyWith(labelText: 'Bio'),
+                            decoration:
+                                _input.copyWith(labelText: 'Bio'),
                           ),
                         ],
                       ),
@@ -343,47 +399,101 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _Chips(label: 'Dietary',
-                            options: const ['vegetarian','vegan','pescatarian','halal','kosher','gluten free','dairy free','low carb'],
-                            selected: _dietary, onChanged: (_) => setState(() {}),
+                          _Chips(
+                            label: 'Dietary',
+                            options: const [
+                              'vegetarian',
+                              'vegan',
+                              'pescatarian',
+                              'halal',
+                              'kosher',
+                              'gluten free',
+                              'dairy free',
+                              'low carb',
+                            ],
+                            selected: _dietary,
+                            onChanged: (_) => setState(() {}),
                           ),
                           const SizedBox(height: 8),
-                          _Chips(label: 'Allergens',
-                            options: const ['peanuts','tree nuts','shellfish','eggs','soy','sesame','wheat','dairy'],
-                            selected: _allergens, onChanged: (_) => setState(() {}),
+                          _Chips(
+                            label: 'Allergens',
+                            options: const [
+                              'peanuts',
+                              'tree nuts',
+                              'shellfish',
+                              'eggs',
+                              'soy',
+                              'sesame',
+                              'wheat',
+                              'dairy',
+                            ],
+                            selected: _allergens,
+                            onChanged: (_) => setState(() {}),
                           ),
                           const SizedBox(height: 8),
-                          _Chips(label: 'Favorite cuisines',
-                            options: const ['mexican','italian','japanese','indian','thai','french','american','mediterranean'],
-                            selected: _cuisines, onChanged: (_) => setState(() {}),
+                          _Chips(
+                            label: 'Favorite cuisines',
+                            options: const [
+                              'mexican',
+                              'italian',
+                              'japanese',
+                              'indian',
+                              'thai',
+                              'french',
+                              'american',
+                              'mediterranean',
+                            ],
+                            selected: _cuisines,
+                            onChanged: (_) => setState(() {}),
                           ),
                           const SizedBox(height: 12),
-                          Row(children: [
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                value: _skill,
-                                items: const [
-                                  DropdownMenuItem(value: 'beginner', child: Text('Beginner')),
-                                  DropdownMenuItem(value: 'intermediate', child: Text('Intermediate')),
-                                  DropdownMenuItem(value: 'advanced', child: Text('Advanced')),
-                                ],
-                                onChanged: (v) => setState(() => _skill = v ?? 'beginner'),
-                                decoration: _input.copyWith(labelText: 'Skill level'),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _skill,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'beginner',
+                                      child: Text('Beginner'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'intermediate',
+                                      child: Text('Intermediate'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'advanced',
+                                      child: Text('Advanced'),
+                                    ),
+                                  ],
+                                  onChanged: (v) => setState(
+                                      () => _skill = v ?? 'beginner'),
+                                  decoration: _input.copyWith(
+                                      labelText: 'Skill level'),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                value: _units,
-                                items: const [
-                                  DropdownMenuItem(value: 'us', child: Text('US Customary')),
-                                  DropdownMenuItem(value: 'metric', child: Text('Metric')),
-                                ],
-                                onChanged: (v) => setState(() => _units = v ?? 'us'),
-                                decoration: _input.copyWith(labelText: 'Units'),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _units,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'us',
+                                      child: Text('US Customary'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'metric',
+                                      child: Text('Metric'),
+                                    ),
+                                  ],
+                                  onChanged: (v) => setState(
+                                      () => _units = v ?? 'us'),
+                                  decoration: _input.copyWith(
+                                      labelText: 'Units'),
+                                ),
                               ),
-                            ),
-                          ]),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -392,17 +502,61 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                       title: 'Settings',
                       child: Column(
                         children: [
-                          SwitchListTile(title: const Text('Public profile'), value: _profilePublic,
-                            onChanged: (v) => setState(() => _profilePublic = v)),
-                          SwitchListTile(title: const Text('Show saved recipes on profile'), value: _showSaved,
-                            onChanged: (v) => setState(() => _showSaved = v)),
+                          SwitchListTile(
+                            title: const Text('Public profile'),
+                            value: _profilePublic,
+                            onChanged: (v) =>
+                                setState(() => _profilePublic = v),
+                          ),
+                          SwitchListTile(
+                            title: const Text(
+                                'Show saved recipes on profile'),
+                            value: _showSaved,
+                            onChanged: (v) =>
+                                setState(() => _showSaved = v),
+                          ),
+
                           const Divider(height: 24),
-                          CheckboxListTile(title: const Text('Notify on comments'), value: _notifyComments,
-                            onChanged: (v) => setState(() => _notifyComments = v ?? true)),
-                          CheckboxListTile(title: const Text('Notify on follows'), value: _notifyFollows,
-                            onChanged: (v) => setState(() => _notifyFollows = v ?? true)),
-                          CheckboxListTile(title: const Text('Notify on saves'), value: _notifySaves,
-                            onChanged: (v) => setState(() => _notifySaves = v ?? true)),
+                          ListTile(
+                            leading:
+                                const Icon(Icons.delete_outline),
+                            title: const Text('Recently Deleted Recipes'),
+                            subtitle: const Text(
+                                'View and restore deleted recipes'),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const TrashPage(),
+                                ),
+                              );
+                            },
+                          ),
+
+                          const Divider(height: 24),
+
+                          CheckboxListTile(
+                            title:
+                                const Text('Notify on comments'),
+                            value: _notifyComments,
+                            onChanged: (v) => setState(
+                                () => _notifyComments = v ?? true),
+                          ),
+                          CheckboxListTile(
+                            title:
+                                const Text('Notify on follows'),
+                            value: _notifyFollows,
+                            onChanged: (v) => setState(
+                                () => _notifyFollows = v ?? true),
+                          ),
+                          CheckboxListTile(
+                            title:
+                                const Text('Notify on saves'),
+                            value: _notifySaves,
+                            onChanged: (v) => setState(
+                                () => _notifySaves = v ?? true),
+                          ),
                         ],
                       ),
                     ),
@@ -430,7 +584,8 @@ class _Header extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [cs.primary, cs.primary.withOpacity(.6)],
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
         ),
       ),
       child: child,
@@ -440,41 +595,80 @@ class _Header extends StatelessWidget {
 
 class _SectionCard extends StatelessWidget {
   const _SectionCard({required this.title, required this.child});
-  final String title; final Widget child;
+  final String title;
+  final Widget child;
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 1.5, clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 1.5,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12), child,
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
   }
 }
 
 class _Chips extends StatelessWidget {
-  const _Chips({required this.label, required this.options, required this.selected, required this.onChanged});
-  final String label; final List<String> options; final Set<String> selected; final ValueChanged<Set<String>> onChanged;
+  const _Chips({
+    required this.label,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final String label;
+  final List<String> options;
+  final Set<String> selected;
+  final ValueChanged<Set<String>> onChanged;
+
   @override
   Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, runSpacing: -6, children: [
-        for (final o in options)
-          FilterChip(
-            label: Text(o),
-            selected: selected.contains(o),
-            onSelected: (v) {
-              final next = {...selected}; v ? next.add(o) : next.remove(o); onChanged(next);
-            },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
           ),
-      ]),
-    ]);
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: -6,
+          children: [
+            for (final o in options)
+              FilterChip(
+                label: Text(o),
+                selected: selected.contains(o),
+                onSelected: (v) {
+                  final next = {...selected};
+                  v ? next.add(o) : next.remove(o);
+                  onChanged(next);
+                },
+              ),
+          ],
+        ),
+      ],
+    );
   }
 }

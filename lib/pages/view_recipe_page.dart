@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/recipe.dart';
 import '../services/saved_service.dart';
-import 'image_gallery_page.dart';
 
 class ViewRecipePage extends StatefulWidget {
   const ViewRecipePage({super.key, required this.recipe});
@@ -44,6 +43,44 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
     }
   }
 
+  Future<void> _showFullScreenImage(String imageUrl) async {
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.9),
+      builder: (ctx) {
+        return GestureDetector(
+          onTap: () => Navigator.of(ctx).pop(),
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Center(
+              child: Hero(
+                tag: 'recipe_${widget.recipe.id}_$_currentPage',
+                child: InteractiveViewer(
+                  child: AspectRatio(
+                    aspectRatio: 4 / 3,
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.black12,
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.broken_image_outlined,
+                          size: 40,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final recipe = widget.recipe;
@@ -65,7 +102,8 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
         actions: [
           if (uid != null)
             StreamBuilder<bool>(
-              stream: savedSvc.isSavedStream(uid, recipe.id),
+              // 👇 use uid! here because we know it's not null inside this if
+              stream: savedSvc.isSavedStream(uid!, recipe.id),
               builder: (context, snap) {
                 final isSaved = snap.data ?? false;
                 return IconButton(
@@ -74,7 +112,8 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                     isSaved ? Icons.bookmark : Icons.bookmark_border,
                   ),
                   onPressed: () async {
-                    await savedSvc.toggleSaved(uid, recipe);
+                    // 👇 call with *named* parameters + uid!
+                    await savedSvc.toggleSaved(uid: uid!, recipe: recipe);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -103,16 +142,8 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                 children: [
                   GestureDetector(
                     onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ImageGalleryPage(
-                            imageUrls: images,
-                            initialIndex: _currentPage,
-                            // 👇 hero tag matching the current image
-                            heroTag: 'recipe_${recipe.id}_$_currentPage',
-                          ),
-                        ),
-                      );
+                      final currentUrl = images[_currentPage];
+                      _showFullScreenImage(currentUrl);
                     },
                     child: AspectRatio(
                       aspectRatio: 4 / 3,
@@ -127,7 +158,6 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                           itemBuilder: (context, index) {
                             final url = images[index];
                             return Hero(
-                              // 👇 hero tag pattern that matches gallery heroTag
                               tag: 'recipe_${recipe.id}_$index',
                               child: Image.network(
                                 url,
@@ -211,9 +241,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        recipe.isPublic
-                            ? 'Public recipe'
-                            : 'Private recipe',
+                        recipe.isPublic ? 'Public recipe' : 'Private recipe',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.brown.shade500,
