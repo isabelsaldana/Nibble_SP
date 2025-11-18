@@ -1,6 +1,7 @@
-// lib/settings_page.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'theme_provider.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -39,12 +40,12 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final themeProvider = Provider.of<ThemeProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
         centerTitle: true,
-        // ✅ No AppBar actions here
       ),
       body: ListView(
         children: [
@@ -92,6 +93,16 @@ class SettingsPage extends StatelessWidget {
             onTap: () {
               // TODO: push privacy settings page
             },
+          ),
+
+          // Dark Mode Toggle
+          ListTile(
+            leading: const Icon(Icons.dark_mode_outlined),
+            title: const Text('Dark Mode'),
+            trailing: Switch(
+              value: themeProvider.isDarkMode,
+              onChanged: (_) => themeProvider.toggleTheme(),
+            ),
           ),
 
           // About
