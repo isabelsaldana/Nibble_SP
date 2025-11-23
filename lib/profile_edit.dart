@@ -7,13 +7,13 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:crop_your_image/crop_your_image.dart';
 import 'pages/trash_page.dart'; 
 
-class ProfileEditPage extends StatefulWidget {
-  const ProfileEditPage({super.key});
+class ProfileEditorPage extends StatefulWidget {
+  const ProfileEditorPage({super.key});
   @override
-  State<ProfileEditPage> createState() => _ProfileEditPageState();
+  State<ProfileEditorPage> createState() => _ProfileEditorPageState();
 }
 
-class _ProfileEditPageState extends State<ProfileEditPage> {
+class _ProfileEditorPageState extends State<ProfileEditorPage> {
   final _formKey = GlobalKey<FormState>();
   final _displayName = TextEditingController();
   final _username = TextEditingController();
@@ -32,7 +32,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   bool _loading = true;
 
   Uint8List? _pickedBytes;   // cropped PNG bytes (preview + upload)
-  XFile? _pickedFile;        // original file, optional
+  // original file, optional (not currently used)
   String? _photoURL;         // saved URL
 
   @override
@@ -120,7 +120,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       if (cropped == null) return;
 
       setState(() {
-        _pickedFile = picked;
         _pickedBytes = cropped;
       });
     } catch (e) {
@@ -451,7 +450,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<String>(
-                                  value: _skill,
+                                  initialValue: _skill,
                                   items: const [
                                     DropdownMenuItem(
                                       value: 'beginner',
@@ -475,7 +474,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: DropdownButtonFormField<String>(
-                                  value: _units,
+                                  initialValue: _units,
                                   items: const [
                                     DropdownMenuItem(
                                       value: 'us',

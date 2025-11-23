@@ -11,7 +11,7 @@ class PublicRecipesPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Public Recipes')),
       body: StreamBuilder<List<Recipe>>(
-        stream: svc.publicRecipes(),
+        stream: svc.publicFeed(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
