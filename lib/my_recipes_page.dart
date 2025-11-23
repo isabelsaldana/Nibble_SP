@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../models/recipe.dart';
-import '../services/saved_service.dart';
-import 'image_gallery_page.dart';
+import 'models/recipe.dart';
+import 'services/saved_service.dart';
+import 'pages/image_gallery_page.dart';
 
 class ViewRecipePage extends StatefulWidget {
   const ViewRecipePage({super.key, required this.recipe});
@@ -74,7 +74,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                     isSaved ? Icons.bookmark : Icons.bookmark_border,
                   ),
                   onPressed: () async {
-                    await savedSvc.toggleSaved(uid, recipe);
+                    await savedSvc.toggleSaved(uid: uid, recipe: recipe);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
