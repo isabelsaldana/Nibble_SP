@@ -1,4 +1,3 @@
-// lib/models/recipe.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Recipe {
@@ -18,6 +17,9 @@ class Recipe {
   final String? difficulty; // 'easy', 'medium', 'hard'
   final List<String> tags;
 
+  // ---- ratings ----
+  final List<int> ratings;
+
   // ---- timestamps ----
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -36,9 +38,16 @@ class Recipe {
     this.servings,
     this.difficulty,
     this.tags = const [],
+    this.ratings = const [],
     this.createdAt,
     this.updatedAt,
   });
+
+  /// Dynamic average rating
+  double get averageRating {
+    if (ratings.isEmpty) return 0.0;
+    return ratings.reduce((a, b) => a + b) / ratings.length;
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -55,12 +64,12 @@ class Recipe {
       'servings': servings,
       'difficulty': difficulty,
       'tags': tags,
+      'ratings': ratings,
       // createdAt/updatedAt set in RecipeService
     };
   }
 
-  factory Recipe.fromFirestore(
-      DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory Recipe.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? <String, dynamic>{};
 
     // ----- ingredients: list OR legacy string -----
@@ -105,19 +114,23 @@ class Recipe {
     }
 
     // ----- metadata -----
-    int? _toInt(dynamic v) =>
-        v is int ? v : (v is num ? v.toInt() : null);
+    int? toInt(dynamic v) => v is int ? v : (v is num ? v.toInt() : null);
 
-    final prepMinutes = _toInt(data['prepMinutes']);
-    final cookMinutes = _toInt(data['cookMinutes']);
-    final servings = _toInt(data['servings']);
+    final prepMinutes = toInt(data['prepMinutes']);
+    final cookMinutes = toInt(data['cookMinutes']);
+    final servings = toInt(data['servings']);
 
-    final difficulty =
-        data['difficulty'] != null ? data['difficulty'].toString() : null;
+    final difficulty = data['difficulty']?.toString();
 
     List<String> tags = [];
     if (data['tags'] is List) {
       tags = (data['tags'] as List).map((e) => e.toString()).toList();
+    }
+
+    // ----- ratings -----
+    List<int> ratings = [];
+    if (data['ratings'] is List) {
+      ratings = (data['ratings'] as List).map((e) => (e as num).toInt()).toList();
     }
 
     DateTime? createdAt;
@@ -141,6 +154,7 @@ class Recipe {
       servings: servings,
       difficulty: difficulty,
       tags: tags,
+      ratings: ratings,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

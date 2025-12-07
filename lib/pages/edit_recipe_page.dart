@@ -1,10 +1,12 @@
+// lib/edit_recipe_page.dart
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/recipe.dart';
 import '../services/recipe_service.dart';
-import '../services/storage_service.dart';
+import '../services/storage_service.dart'; // keep your storage service path
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EditRecipePage extends StatefulWidget {
   const EditRecipePage({super.key, required this.recipe});
@@ -57,6 +59,7 @@ class _EditRecipePageState extends State<EditRecipePage> {
         'ingredients': ings,
         'steps': stps,
         'isPublic': _isPublic,
+        'updatedAt': FieldValue.serverTimestamp(),
       };
 
       if (_newImage != null) {
@@ -76,7 +79,7 @@ class _EditRecipePageState extends State<EditRecipePage> {
   @override
   Widget build(BuildContext context) {
     final r = widget.recipe;
-    final currentImg = _newImage ?? null;
+    final currentImg = _newImage;
     final url = (r.imageUrls.isNotEmpty) ? r.imageUrls.first : null;
 
     return Scaffold(
@@ -94,11 +97,11 @@ class _EditRecipePageState extends State<EditRecipePage> {
               ),
               child: currentImg != null
                 ? ClipRRect(borderRadius: BorderRadius.circular(12),
-                    child: Image.memory(currentImg, fit: BoxFit.cover))
+                    child: Image.memory(currentImg, fit: BoxFit.cover, width: double.infinity, height: 180))
                 : (url == null)
                     ? const Center(child: Text('Tap to add image 📷'))
                     : ClipRRect(borderRadius: BorderRadius.circular(12),
-                        child: Image.network(url, fit: BoxFit.cover)),
+                        child: Image.network(url, fit: BoxFit.cover, width: double.infinity, height: 180)),
             ),
           ),
           const SizedBox(height: 16),

@@ -1,9 +1,11 @@
 // lib/pages/view_recipe_page.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart'; // <-- NEW IMPORT
 
 import '../models/recipe.dart';
 import '../services/saved_service.dart';
+import '../services/recipe_service.dart'; // <-- NEW IMPORT
 
 class ViewRecipePage extends StatefulWidget {
   const ViewRecipePage({super.key, required this.recipe});
@@ -17,6 +19,11 @@ class ViewRecipePage extends StatefulWidget {
 class _ViewRecipePageState extends State<ViewRecipePage> {
   late final PageController _pageController;
   int _currentPage = 0;
+
+  // RATING STATE & SERVICE <-- NEW
+  final _recipeSvc = RecipeService();
+  double _userRating = 0.0;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -81,6 +88,41 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
     );
   }
 
+  // RATING SUBMISSION LOGIC <-- NEW
+  void _submitRating() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please log in to submit a rating.")));
+      return;
+    }
+    if (_userRating == 0.0) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a star rating.")));
+      return;
+    }
+    
+    setState(() => _isSubmitting = true);
+
+    try {
+      // Calls the modified addReview in RecipeService
+      await _recipeSvc.addReview(
+        recipeId: widget.recipe.id,
+        userId: uid,
+        rating: _userRating.round(),
+        text: '',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Rating submitted!")));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to submit rating: $e")));
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final recipe = widget.recipe;
@@ -102,8 +144,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
         actions: [
           if (uid != null)
             StreamBuilder<bool>(
-              // 👇 use uid! here because we know it's not null inside this if
-              stream: savedSvc.isSavedStream(uid!, recipe.id),
+              stream: savedSvc.isSavedStream(uid, recipe.id),
               builder: (context, snap) {
                 final isSaved = snap.data ?? false;
                 return IconButton(
@@ -112,8 +153,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                     isSaved ? Icons.bookmark : Icons.bookmark_border,
                   ),
                   onPressed: () async {
-                    // 👇 call with *named* parameters + uid!
-                    await savedSvc.toggleSaved(uid: uid!, recipe: recipe);
+                    await savedSvc.toggleSaved(uid: uid, recipe: recipe);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -319,6 +359,73 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                         fontSize: 14.5,
                         height: 1.5,
                       ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
+                  // RATING WIDGET SECTION <-- ADDED
+                  if (uid != null) ...[
+                    const Divider(height: 30),
+                    const Text(
+                      'Your Rating',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // StreamBuilder to fetch user's existing rating
+                    StreamBuilder<int>(
+                      stream: _recipeSvc.streamUserRating(widget.recipe.id, uid),
+                      builder: (context, snap) {
+                        final initialRating = snap.data?.toDouble() ?? 0.0;
+                        
+                        // Use a post-frame callback to safely update state if we get a new initial rating
+                        if (snap.hasData && snap.data! != 0 && _userRating == 0.0) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            setState(() {
+                              _userRating = initialRating;
+                            });
+                          });
+                        }
+
+                        return Row(
+                          children: [
+                            RatingBar.builder(
+                              // Use _userRating if the user has interacted, otherwise use the fetched initialRating
+                              initialRating: _userRating == 0.0 ? initialRating : _userRating,
+                              minRating: 1,
+                              direction: Axis.horizontal,
+                              allowHalfRating: false,
+                              itemCount: 5,
+                              itemSize: 32,
+                              itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
+                              itemBuilder: (context, _) => Icon(
+                                Icons.star,
+                                color: cs.secondary, // Uses color scheme primary
+                              ),
+                              onRatingUpdate: (rating) {
+                                // Update local state immediately on interaction
+                                setState(() => _userRating = rating);
+                              },
+                            ),
+                            const Spacer(),
+                            ElevatedButton.icon(
+                              onPressed: _isSubmitting || _userRating == 0.0 ? null : _submitRating,
+                              icon: _isSubmitting 
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                                : const Icon(Icons.send),
+                              label: Text(_isSubmitting ? 'Saving...' : 'Submit Rating'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: cs.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                   ],

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'user_service.dart';
+import 'services/user_service.dart';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Inclusive option catalogs (centralized)
@@ -201,7 +201,7 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
       await service.reserveUsername(handle);
 
       // 2) Save full profile (no photoURL here)
-      await service.upsertProfile({
+      await service.upsertProfile(user.uid, {
         'displayName': _nameCtrl.text.trim(),
         'username': handle,
         'household': _household,
@@ -538,7 +538,7 @@ class _StepHouseholdGoal extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DropdownButtonFormField<int>(
-            value: household,
+            initialValue: household,
             decoration: const InputDecoration(
               labelText: 'Household size',
               border: OutlineInputBorder(),
@@ -608,7 +608,7 @@ class _StepCook extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButtonFormField<String>(
-            value: skill,
+            initialValue: skill,
             decoration: const InputDecoration(
               labelText: 'Skill level',
               border: OutlineInputBorder(),
@@ -756,7 +756,7 @@ class _StepEat extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: units,
+            initialValue: units,
             decoration: const InputDecoration(
               labelText: 'Units',
               border: OutlineInputBorder(),

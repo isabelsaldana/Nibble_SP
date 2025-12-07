@@ -202,7 +202,7 @@ class _AddRecipePageState extends State<AddRecipePage> {
         tags: _tags.toList(),
       );
 
-      final id = await _svc.create(recipe, _uid);
+      final id = await _svc.create(recipe.toMap(), _uid);
 
       // upload cover + extra images
       final imageUrls = <String>[];
@@ -625,7 +625,7 @@ class _AddRecipePageState extends State<AddRecipePage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _difficulty,
+                    initialValue: _difficulty,
                     decoration:
                         _in.copyWith(labelText: 'Difficulty'),
                     items: const [

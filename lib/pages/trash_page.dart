@@ -19,7 +19,7 @@ class TrashPage extends StatelessWidget {
         title: const Text('Trash'),
       ),
       body: StreamBuilder<List<Recipe>>(
-        stream: svc.deletedRecipes(uid),
+        stream: svc.deleted_recipes(uid),
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(

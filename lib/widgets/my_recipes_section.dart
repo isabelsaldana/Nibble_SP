@@ -1,5 +1,6 @@
 // lib/widgets/my_recipes_section.dart
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/recipe.dart';
 import '../services/recipe_service.dart';
@@ -35,7 +36,6 @@ class MyRecipesSection extends StatelessWidget {
         }
 
         final items = snap.data ?? [];
-        // 🔍 debug: see what Firestore is returning
         print('MyRecipesSection for uid=$uid -> ${items.length} recipes');
 
         if (items.isEmpty) {
@@ -63,17 +63,17 @@ class MyRecipesSection extends StatelessWidget {
           );
         }
 
-        // ---------- IG-style 3-column grid ----------
+        // ---------- IG-style 3-column grid with rating overlay ----------
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           itemCount: items.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,      // three per row
+            crossAxisCount: 3,
             crossAxisSpacing: 4,
             mainAxisSpacing: 4,
-            childAspectRatio: 1,    // square tiles
+            childAspectRatio: 1,
           ),
           itemBuilder: (context, index) {
             final r = items[index];
@@ -88,7 +88,7 @@ class MyRecipesSection extends StatelessWidget {
   }
 }
 
-// ============= GRID TILE =============
+// ============= GRID TILE WITH STAR RATING OVERLAY =============
 
 class _RecipeGridTile extends StatefulWidget {
   const _RecipeGridTile({
@@ -148,10 +148,63 @@ class _RecipeGridTileState extends State<_RecipeGridTile> {
                             errorBuilder: (_, __, ___) => Container(
                               color: Colors.brown.shade100,
                               alignment: Alignment.center,
-                              child:
-                                  const Icon(Icons.restaurant, size: 28),
+                              child: const Icon(Icons.restaurant, size: 28),
                             ),
                           ),
+                  ),
+                ),
+
+                // ---------- Rating Overlay (top-left) ----------
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('recipes')
+                        .doc(widget.recipe.id)
+                        .snapshots(),
+                    builder: (context, snap) {
+                      if (!snap.hasData) return const SizedBox();
+                      final data = snap.data!.data() as Map<String, dynamic>?;
+                      final summary = data?['ratingSummary'];
+
+                      if (summary == null || summary['count'] == 0) {
+                        return const SizedBox();
+                      }
+
+                      final avg = (summary['average'] ?? 0).toDouble();
+                      final count = (summary['count'] ?? 0).toInt();
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.star,
+                                size: 12, color: Colors.amber),
+                            const SizedBox(width: 3),
+                            Text(
+                              avg.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              '($count)',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 10),
+                            )
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
 
@@ -211,14 +264,12 @@ class _RecipeGridTileState extends State<_RecipeGridTile> {
                           ),
                         );
                       } else if (v == 'delete') {
-                        // confirm
                         final confirmed = await showDialog<bool>(
                               context: context,
                               builder: (ctx) => AlertDialog(
                                 title: const Text('Delete recipe?'),
                                 content: Text(
-                                  'Are you sure you want to delete "${widget.recipe.title}"?',
-                                ),
+                                    'Are you sure you want to delete "${widget.recipe.title}"?'),
                                 actions: [
                                   TextButton(
                                     onPressed: () =>
