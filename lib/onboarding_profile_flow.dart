@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'services/user_service.dart';
+import 'user_service.dart';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Inclusive option catalogs (centralized)
@@ -193,13 +193,15 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
       if (user == null) {
         throw StateError('You are signed out. Please log in again.');
       }
-  
+
+      final service = UserService();
 
       // 1) Reserve username (throws if taken)
       final handle = _usernameCtrl.text.trim().toLowerCase();
-      await UserService.reserveUsername(handle);
+      await service.reserveUsername(handle);
+
       // 2) Save full profile (no photoURL here)
-      await UserService.upsertProfile(user.uid, {
+      await service.upsertProfile({
         'displayName': _nameCtrl.text.trim(),
         'username': handle,
         'household': _household,
@@ -536,7 +538,7 @@ class _StepHouseholdGoal extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DropdownButtonFormField<int>(
-            initialValue: household,
+            value: household,
             decoration: const InputDecoration(
               labelText: 'Household size',
               border: OutlineInputBorder(),
@@ -606,7 +608,7 @@ class _StepCook extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButtonFormField<String>(
-            initialValue: skill,
+            value: skill,
             decoration: const InputDecoration(
               labelText: 'Skill level',
               border: OutlineInputBorder(),
@@ -754,7 +756,7 @@ class _StepEat extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: units,
+            value: units,
             decoration: const InputDecoration(
               labelText: 'Units',
               border: OutlineInputBorder(),

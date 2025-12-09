@@ -315,8 +315,8 @@ class SavedService {
 
         if (!recipeSnap.exists) return null;
 
-        return Recipe.fromDoc(
-          recipeSnap,
+        return Recipe.fromFirestore(
+          recipeSnap as DocumentSnapshot<Map<String, dynamic>>,
         );
       }).toList();
 

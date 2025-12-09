@@ -1,12 +1,10 @@
-// lib/edit_recipe_page.dart
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/recipe.dart';
 import '../services/recipe_service.dart';
-import '../services/storage_service.dart'; // keep your storage service path
+import '../services/storage_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EditRecipePage extends StatefulWidget {
   const EditRecipePage({super.key, required this.recipe});
@@ -18,14 +16,14 @@ class EditRecipePage extends StatefulWidget {
 
 class _EditRecipePageState extends State<EditRecipePage> {
   late TextEditingController _title;
-  late TextEditingController _description;
+  late TextEditingController _desc;
   late TextEditingController _ingredients;
   late TextEditingController _steps;
   bool _isPublic = true;
   Uint8List? _newImage;
   bool _saving = false;
 
- 
+  final _svc = RecipeService();
   final _store = StorageService();
   final _uid = FirebaseAuth.instance.currentUser!.uid;
 
@@ -34,8 +32,8 @@ class _EditRecipePageState extends State<EditRecipePage> {
     super.initState();
     final r = widget.recipe;
     _title = TextEditingController(text: r.title);
+    _desc = TextEditingController(text: r.description ?? '');
     _ingredients = TextEditingController(text: r.ingredients.join(', '));
-    _description = TextEditingController(text: r.description ?? '');
     _steps = TextEditingController(text: r.steps.join('\n'));
     _isPublic = r.isPublic;
   }
@@ -55,11 +53,12 @@ class _EditRecipePageState extends State<EditRecipePage> {
 
       final updates = {
         'title': _title.text.trim(),
+        'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         'ingredients': ings,
-        'description': '',
+        'ingredientsLower': ings.map((e) => e.toLowerCase()).toList(), 
         'steps': stps,
+         'tags': widget.recipe.tags,        
         'isPublic': _isPublic,
-        'updatedAt': FieldValue.serverTimestamp(),
       };
 
       if (_newImage != null) {
@@ -68,7 +67,7 @@ class _EditRecipePageState extends State<EditRecipePage> {
         updates['imageUrls'] = [url];
       }
 
-      await RecipeService.updateRecipe(widget.recipe.id, updates);
+      await _svc.update(widget.recipe.id, updates);
       if (!mounted) return;
       Navigator.pop(context);
     } finally {
@@ -79,7 +78,7 @@ class _EditRecipePageState extends State<EditRecipePage> {
   @override
   Widget build(BuildContext context) {
     final r = widget.recipe;
-    final currentImg = _newImage;
+    final currentImg = _newImage ?? null;
     final url = (r.imageUrls.isNotEmpty) ? r.imageUrls.first : null;
 
     return Scaffold(
@@ -97,17 +96,17 @@ class _EditRecipePageState extends State<EditRecipePage> {
               ),
               child: currentImg != null
                 ? ClipRRect(borderRadius: BorderRadius.circular(12),
-                    child: Image.memory(currentImg, fit: BoxFit.cover, width: double.infinity, height: 180))
+                    child: Image.memory(currentImg, fit: BoxFit.cover))
                 : (url == null)
                     ? const Center(child: Text('Tap to add image 📷'))
                     : ClipRRect(borderRadius: BorderRadius.circular(12),
-                        child: Image.network(url, fit: BoxFit.cover, width: double.infinity, height: 180)),
+                        child: Image.network(url, fit: BoxFit.cover)),
             ),
           ),
           const SizedBox(height: 16),
           TextField(controller: _title, decoration: const InputDecoration(labelText: 'Recipe Title')),
           const SizedBox(height: 8),
-          TextField(controller: _description, decoration: const InputDecoration(labelText: 'Description (optional)')),
+          TextField(controller: _desc, decoration: const InputDecoration(labelText: 'Description')),
           const SizedBox(height: 8),
           TextField(controller: _ingredients, decoration: const InputDecoration(labelText: 'Ingredients (comma-separated)')),
           const SizedBox(height: 8),

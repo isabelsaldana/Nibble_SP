@@ -50,6 +50,7 @@ class Recipe {
     this.updatedAt,
   });
 
+  /// Correct fromDoc()
   factory Recipe.fromDoc(DocumentSnapshot doc) {
     final raw = doc.data() as Map<String, dynamic>? ?? {};
 
@@ -62,7 +63,7 @@ class Recipe {
 
     return Recipe(
       id: doc.id,
-      authorId: raw['authorId'] ?? "",     // Never null
+      authorId: raw['authorId'] ?? "",
       title: raw['title'] ?? "",
       description: raw['description'] ?? "",
       ingredients: safeList(raw['ingredients']),
@@ -87,6 +88,11 @@ class Recipe {
     );
   }
 
+  /// ⭐ Correct alias so FeedPage/SearchPage works
+  factory Recipe.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+    return Recipe.fromDoc(doc);
+  }
+
   Map<String, dynamic> toMap() {
     return {
       "authorId": authorId,
@@ -106,9 +112,10 @@ class Recipe {
       "difficulty": difficulty,
       "averageRating": averageRating,
       "ratingCount": ratingCount,
-      "createdAt": createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
+      "createdAt": createdAt != null
+          ? Timestamp.fromDate(createdAt!)
+          : FieldValue.serverTimestamp(),
       "updatedAt": FieldValue.serverTimestamp(),
     };
   }
 }
-

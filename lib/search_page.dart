@@ -1,208 +1,343 @@
 // lib/search_page.dart
 import 'dart:async';
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
 import 'models/recipe.dart';
-import 'services/user_service.dart';
-import 'pages/view_profile_page.dart';
-import 'widgets/search_recipe_card.dart';
+import 'pages/view_recipe_page.dart';
+import 'services/user_service.dart'; // ⭐ REQUIRED for profile search
+
+String _timeAgo(DateTime? dt) {
+  if (dt == null) return '';
+  final now = DateTime.now();
+  final diff = now.difference(dt);
+
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  if (diff.inDays < 7) return '${diff.inDays}d ago';
+  final weeks = diff.inDays ~/ 7;
+  return '${weeks}w ago';
+}
 
 class SearchPage extends StatefulWidget {
-  final String? initialTag;
-  const SearchPage({super.key, this.initialTag});
-
+  const SearchPage({super.key});
   @override
   State<SearchPage> createState() => _SearchPageState();
 }
 
 class _SearchPageState extends State<SearchPage> {
-  final controller = TextEditingController();
-  Timer? debounceTimer;
+  final _controller = TextEditingController();
+  String _query = "";
 
-  String query = "";
-  String? activeTag;
+  List<String> _suggestions = [];
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    activeTag = widget.initialTag;
-  }
+    _controller.addListener(() {
+      final text = _controller.text.trim().toLowerCase();
 
-  @override
-  void dispose() {
-    debounceTimer?.cancel();
-    controller.dispose();
-    super.dispose();
-  }
-
-  void onQueryChanged(String text) {
-    debounceTimer?.cancel();
-    debounceTimer = Timer(const Duration(milliseconds: 250), () {
-      setState(() {
-        query = text.trim().toLowerCase();
-        activeTag = null;
+      if (_debounce?.isActive ?? false) _debounce!.cancel();
+      _debounce = Timer(const Duration(milliseconds: 120), () {
+        if (!mounted) return;
+        setState(() => _query = text);
+        _updateSuggestions(text);
       });
     });
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  // ⭐ Suggestions from title, tags, ingredients
+  Future<void> _updateSuggestions(String q) async {
+    if (q.isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+
+    final snap = await FirebaseFirestore.instance
+        .collection('recipes')
+        .where("isPublic", isEqualTo: true)
+        .limit(10)
+        .get();
+
+    final Set<String> words = {};
+
+    for (final doc in snap.docs) {
+      final d = doc.data();
+
+      void add(dynamic v) {
+        if (v is String) words.addAll(v.toLowerCase().split(" "));
+        if (v is List) {
+          for (final x in v) {
+            if (x is String) words.addAll(x.toLowerCase().split(" "));
+          }
+        }
+      }
+
+      add(d["title"]);
+      add(d["tags"]);
+      add(d["ingredients"]);
+    }
+
+    setState(() {
+      _suggestions = words
+          .where((w) => w.startsWith(q) && w.length > q.length)
+          .take(6)
+          .toList();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final recipeStream = FirebaseFirestore.instance
+        .collection("recipes")
+        .where("isPublic", isEqualTo: true)
+        .orderBy("createdAt", descending: true)
+        .snapshots();
+
     return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: controller,
-          onChanged: onQueryChanged,
-          decoration: const InputDecoration(
-            hintText: "Search recipes, users, tags, ingredients...",
-            border: InputBorder.none,
-          ),
-        ),
-      ),
-      body: query.isEmpty && activeTag == null
-          ? const Center(child: Text("Start typing to search…"))
-          : (activeTag != null ? _tagResults() : _fullSearch()),
-    );
-  }
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildSearchBar(),
 
-  /* ────────────────────────────────────────────────
-     TAG FILTER
-     ──────────────────────────────────────────────── */
+            if (_suggestions.isNotEmpty)
+              _buildSuggestionDropdown(),
 
-  Widget _tagResults() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection("recipes")
-          .where("tagsLower", arrayContains: activeTag!.toLowerCase())
-          .snapshots(),
-      builder: (_, snap) {
-        if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: recipeStream,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-        final list = snap.data!.docs.map((e) => Recipe.fromDoc(e)).toList();
-        if (list.isEmpty) {
-          return const Center(child: Text("No recipes for this tag."));
-        }
+                  final docs = snap.data?.docs ?? [];
 
-        return ListView(
-          children: list.map((e) => SearchRecipeCard(recipe: e)).toList(),
-        );
-      },
-    );
-  }
+                  final List<_ScoredRecipe> results = [];
 
-  /* ────────────────────────────────────────────────
-     FULL SEARCH
-     ──────────────────────────────────────────────── */
+                  for (final d in docs) {
+                    final recipe = Recipe.fromFirestore(d);
+                    final data = d.data();
 
-  Widget _fullSearch() {
-    final q = query;
+                    final blob = _buildBlob(data);
+                    final score = _score(blob, _query);
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection("recipes")
-          .where("titleLower", isGreaterThanOrEqualTo: q)
-          .where("titleLower", isLessThanOrEqualTo: "$q\uf8ff")
-          .snapshots(),
-      builder: (_, recipeSnap) {
-        final recipes =
-            recipeSnap.data?.docs.map((e) => Recipe.fromDoc(e)).toList() ?? [];
+                    if (_query.isEmpty || score > 0) {
+                      results.add(_ScoredRecipe(recipe, score));
+                    }
+                  }
 
-        return StreamBuilder<List<Map<String, dynamic>>>(
-          stream: UserService.searchUsers(q),
-          builder: (_, userSnap) {
-            final users = userSnap.data ?? [];
+                  if (_query.isNotEmpty && results.isEmpty) {
+                    return _tryProfileSearch();
+                  }
 
-            final tagSet = <String>{};
-            final ingSet = <String>{};
+                  if (_query.isNotEmpty) {
+                    results.sort((a, b) => b.score.compareTo(a.score));
+                  }
 
-            for (var r in recipes) {
-              for (var t in r.tagsLower) {
-                if (t.contains(q)) tagSet.add(t);
-              }
-              for (var ing in r.ingredientsLower) {
-                if (ing.contains(q)) ingSet.add(ing);
-              }
-            }
-
-            return ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                if (users.isNotEmpty)
-                  const Text("Users",
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-
-                ...users.map((u) {
-                  final photo = u["photo"]?.toString();
-                  final username = u["username"]?.toString() ?? "";
-                  final userId = u["id"]?.toString();
-
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundImage: (photo != null && photo.isNotEmpty)
-                          ? NetworkImage(photo)
-                          : null,
-                      child: (photo == null || photo.isEmpty)
-                          ? Text(username.isNotEmpty
-                              ? username[0].toUpperCase()
-                              : "?")
-                          : null,
-                    ),
-                    title: Text(username),
-                    onTap: () {
-                      if (userId == null || userId.isEmpty) return;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ViewProfilePage(userId: userId),
-                        ),
-                      );
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: results.length,
+                    itemBuilder: (_, i) {
+                      final r = results[i].recipe;
+                      return _RecipeListTile(recipe: r);
                     },
                   );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ⭐ SEARCH BAR
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.brown.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.brown.shade100),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: "Search recipes, tags, ingredients, profiles…",
+                ),
+              ),
+            ),
+            if (_controller.text.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () => setState(() {
+                  _controller.clear();
+                  _query = "";
                 }),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                if (tagSet.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 14),
-                    child: Text("Tags",
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                ...tagSet.map((t) => ListTile(
-                      leading: const Icon(Icons.tag),
-                      title: Text("#$t"),
-                      onTap: () => setState(() {
-                        activeTag = t;
-                        controller.clear();
-                      }),
-                    )),
+  // ⭐ DROPDOWN SUGGESTIONS
+  Widget _buildSuggestionDropdown() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Material(
+        elevation: 2,
+        borderRadius: BorderRadius.circular(10),
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: _suggestions.length,
+          itemBuilder: (_, i) {
+            final s = _suggestions[i];
+            return ListTile(
+              title: Text(s),
+              onTap: () {
+                _controller.text = s;
+                setState(() {
+                  _query = s;
+                  _suggestions = [];
+                });
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
 
-                if (ingSet.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 14),
-                    child: Text("Ingredients",
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                ...ingSet.map((ing) => ListTile(
-                      leading: const Icon(Icons.kitchen),
-                      title: Text(ing),
-                    )),
+  /* ---------------------------------------------------------
+     ⭐ If no recipes match, try username search instantly
+     --------------------------------------------------------- */
+  Widget _tryProfileSearch() {
+    return StreamBuilder(
+      stream: UserService.searchUsers(_query),
+      builder: (_, snap) {
+        if (!snap.hasData || snap.data!.isEmpty) {
+          return Center(
+            child: Text('No results for "$_query"'),
+          );
+        }
 
-                if (recipes.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 14),
-                    child: Text("Recipes",
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                ...recipes.map((r) => SearchRecipeCard(recipe: r)),
-              ],
+        final users = snap.data!;
+
+        return ListView.builder(
+          itemCount: users.length,
+          itemBuilder: (_, i) {
+            final u = users[i];
+            return ListTile(
+              leading: u["photo"] != null
+                  ? CircleAvatar(backgroundImage: NetworkImage(u["photo"]))
+                  : const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(u["username"] ?? "Unknown"),
+              subtitle: Text(u["id"]),
             );
           },
         );
       },
     );
   }
+}
+
+/* ---------------------------------------------------------
+   ⭐ SIMPLE LIST TILE (NO IMAGES IN SEARCH RESULTS)
+   --------------------------------------------------------- */
+
+class _RecipeListTile extends StatelessWidget {
+  final Recipe recipe;
+  const _RecipeListTile({required this.recipe});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        title: Text(recipe.title),
+        subtitle: Text(
+          recipe.tags.isNotEmpty
+              ? recipe.tags.map((t) => "#$t").join("  ")
+              : "No tags",
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ViewRecipePage(recipe: recipe),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/* ---------------------------------------------------------
+   ⭐ SEARCH SCORING SYSTEM
+   --------------------------------------------------------- */
+
+String _buildBlob(Map<String, dynamic> d) {
+  final parts = <String>[];
+
+  void add(dynamic v) {
+    if (v is String) parts.add(v);
+    if (v is List) {
+      for (final x in v) {
+        if (x is String) parts.add(x);
+      }
+    }
+  }
+
+  add(d["title"]);
+  add(d["description"]);
+  add(d["ingredients"]);
+  add(d["steps"]);
+  add(d["tags"]);
+
+  return parts.join(" ").toLowerCase();
+}
+
+int _score(String blob, String query) {
+  if (query.isEmpty) return 0;
+
+  int score = 0;
+  for (final part in query.split(" ")) {
+    if (part.isEmpty) continue;
+    score += _count(blob, part);
+  }
+  return score;
+}
+
+int _count(String text, String term) {
+  int count = 0;
+  int index = text.indexOf(term);
+  while (index != -1) {
+    count++;
+    index = text.indexOf(term, index + term.length);
+  }
+  return count;
+}
+
+class _ScoredRecipe {
+  final Recipe recipe;
+  final int score;
+  _ScoredRecipe(this.recipe, this.score);
 }

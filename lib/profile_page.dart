@@ -1,11 +1,9 @@
-// lib/profile_page.dart - UPDATED to display photoUrl
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'pages/trash_page.dart';
 
-import 'profile_edit.dart' as profile_edit;
+import 'profile_edit.dart';
 import 'widgets/my_recipes_section.dart'; // 👈 make sure this file exists
 
 class ProfilePage extends StatelessWidget {
@@ -37,122 +35,130 @@ class ProfilePage extends StatelessWidget {
         final displayName =
             (data['displayName'] as String?)?.trim().isNotEmpty == true
                 ? (data['displayName'] as String).trim()
-                : (me.displayName?.trim().isNotEmpty == true
-                    ? me.displayName!.trim()
-                    : 'Your Profile');
-        final username = data['username'] as String?;
-        final bio = data['bio'] as String?;
-        final followersCount = (data['followers'] as List?)?.length ?? 0;
-        final followingCount = (data['following'] as List?)?.length ?? 0;
-        final photoUrl = data['photoUrl'] as String?; // <--- NEW: Get photoUrl
-        final ver = data['photoVersion'] as int? ?? 0;
+                : (me.displayName ?? 'Nibble user');
+
+        final username =
+            (data['username'] as String?)?.trim().isNotEmpty == true
+                ? (data['username'] as String).trim()
+                : (me.email != null ? me.email!.split('@').first : 'user');
+
+        final bio = (data['bio'] as String?)?.trim() ?? '';
+
+        String? photo = (data['photoURL'] as String?)?.trim();
+        photo ??= me.photoURL;
+
+        final updatedAtMs = (data['updatedAt'] is Timestamp)
+            ? (data['updatedAt'] as Timestamp).millisecondsSinceEpoch
+            : DateTime.now().millisecondsSinceEpoch;
+
+        final bustedUrl =
+            (photo != null && photo.isNotEmpty) ? _cacheBust(photo, updatedAtMs) : null;
+
+        // debug
+        // ignore: avoid_print
+        print('ProfilePage photoURL => $photo  (busted => $bustedUrl)');
 
         return Scaffold(
+          appBar: AppBar(
+            title: const Text(''),
+            centerTitle: true,
+            actions: [
+              IconButton(
+                tooltip: 'Settings',
+                icon: const Icon(Icons.settings),
+                onPressed: () => Navigator.pushNamed(context, '/settings'),
+              ),
+            ],
+          ),
           body: CustomScrollView(
             slivers: [
-              SliverAppBar(
-                automaticallyImplyLeading: false,
-                pinned: true,
-                title: Text(displayName),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const profile_edit.ProfileEditorPage()),
-                      );
-                    },
-                  ),
-                  PopupMenuButton<String>(
-                    onSelected: (v) {
-                      if (v == 'trash') {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const TrashPage()),
-                        );
-                      }
-                      if (v == 'signout') {
-                        FirebaseAuth.instance.signOut();
-                      }
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: 'trash',
-                        child: Text('Trash'),
-                      ),
-                      PopupMenuItem(
-                        value: 'signout',
-                        child: Text('Sign out'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              // ---------- Header (no colored block, just padding) ----------
               SliverToBoxAdapter(
                 child: _Header(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Profile Picture or Initial - MODIFIED
-                          photoUrl?.isNotEmpty == true
-                              ? CircleAvatar(
-                                  radius: 40,
-                                  backgroundImage: NetworkImage(_cacheBust(photoUrl!, ver)),
-                                )
-                              : _Initial(displayName: displayName, email: me.email),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  displayName,
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                      CircleAvatar(
+                        radius: 48,
+                        backgroundColor: Colors.white.withOpacity(.9),
+                        child: bustedUrl == null
+                            ? _Initial(
+                                displayName: displayName,
+                                email: me.email,
+                              )
+                            : ClipOval(
+                                child: Image.network(
+                                  bustedUrl,
+                                  width: 96,
+                                  height: 96,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, err, __) {
+                                    // ignore: avoid_print
+                                    print('Image.network error: $err');
+                                    return _Initial(
+                                      displayName: displayName,
+                                      email: me.email,
+                                    );
+                                  },
                                 ),
-                                if (username?.isNotEmpty == true)
-                                  Text(
-                                    '@$username',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
+                              ),
                       ),
                       const SizedBox(height: 12),
-                      // Followers/Following
-                      Row(
-                        children: [
-                          Text('$followersCount Followers'),
-                          const SizedBox(width: 16),
-                          Text('$followingCount Following'),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      if (bio?.isNotEmpty == true)
-                        Text(
-                          bio!,
-                          style: const TextStyle(fontSize: 14),
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
                         ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '@$username',
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 14,
+                        ),
+                      ),
+                      if (bio.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          bio,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
               ),
 
-              // ---------- Section Title ----------
+              // ---------- Edit button ----------
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileEditPage(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Edit profile'),
+                  ),
+                ),
+              ),
+
+              // ---------- My Recipes header ----------
               const SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  padding: EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
                     'My Recipes',
                     style:
@@ -164,7 +170,7 @@ class ProfilePage extends StatelessWidget {
 
               // ---------- My Recipes list ----------
               SliverToBoxAdapter(
-                child: MyRecipesSection(),
+                child: MyRecipesSection(uid: me.uid),
               ),
             ],
           ),
@@ -186,7 +192,7 @@ class _Header extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      color: bg,
+      color: bg, // 👈 same as the rest of the page, no block
       child: child,
     );
   }
@@ -202,16 +208,12 @@ class _Initial extends StatelessWidget {
     final ch = displayName.isNotEmpty
         ? displayName[0]
         : (email?.isNotEmpty == true ? email![0] : 'N');
-    return CircleAvatar(
-      radius: 40,
-      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      child: Text(
-        ch.toUpperCase(),
-        style: TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
-        ),
+    return Text(
+      ch.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 36,
+        fontWeight: FontWeight.w700,
+        color: Colors.black87,
       ),
     );
   }
