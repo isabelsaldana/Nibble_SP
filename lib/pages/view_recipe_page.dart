@@ -1,9 +1,12 @@
 // lib/pages/view_recipe_page.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/recipe.dart';
 import '../services/saved_service.dart';
+import '../public_profile_page.dart';
+import '../home_page.dart'; // ⭐ REQUIRED FOR TAG NAVIGATION
 
 class ViewRecipePage extends StatefulWidget {
   const ViewRecipePage({super.key, required this.recipe});
@@ -102,8 +105,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
         actions: [
           if (uid != null)
             StreamBuilder<bool>(
-              // 👇 use uid! here because we know it's not null inside this if
-              stream: savedSvc.isSavedStream(uid!, recipe.id),
+              stream: savedSvc.isSavedStream(uid, recipe.id),
               builder: (context, snap) {
                 final isSaved = snap.data ?? false;
                 return IconButton(
@@ -112,8 +114,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                     isSaved ? Icons.bookmark : Icons.bookmark_border,
                   ),
                   onPressed: () async {
-                    // 👇 call with *named* parameters + uid!
-                    await savedSvc.toggleSaved(uid: uid!, recipe: recipe);
+                    await savedSvc.toggleSaved(uid: uid, recipe: recipe);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -178,15 +179,13 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Page indicator
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       for (int i = 0; i < images.length; i++)
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
-                          margin:
-                              const EdgeInsets.symmetric(horizontal: 3),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
                           width: i == _currentPage ? 12 : 6,
                           height: 6,
                           decoration: BoxDecoration(
@@ -213,13 +212,12 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
             else
               const SizedBox(height: 12),
 
-            // ---------- BODY CONTENT ----------
+            // ---------- BODY ----------
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title + public/private
                   Text(
                     recipe.title,
                     style: const TextStyle(
@@ -227,13 +225,76 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
+
+                  // AUTHOR
+                  FutureBuilder<Map<String, dynamic>?>(
+                    future: FirebaseFirestore.instance
+                        .collection("users")
+                        .doc(recipe.authorId)
+                        .get()
+                        .then((d) => d.data()),
+                    builder: (context, snap) {
+                      final user = snap.data;
+
+                      final photo = user?["photo"];
+                      final displayName = user?["displayName"];
+                      final username = user?["username"];
+
+                      return InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  PublicProfilePage(uid: recipe.authorId),
+                            ),
+                          );
+                        },
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundImage:
+                                  (photo != null && photo.toString().isNotEmpty)
+                                      ? NetworkImage(photo)
+                                      : null,
+                              child: (photo == null)
+                                  ? const Icon(Icons.person, size: 18)
+                                  : null,
+                            ),
+                            const SizedBox(width: 10),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  displayName ?? username ?? "Unknown",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                Text(
+                                  "@${username ?? 'user'}",
+                                  style: TextStyle(
+                                    color: Colors.brown.shade500,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            )
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // PUBLIC/PRIVATE
                   Row(
                     children: [
                       Icon(
-                        recipe.isPublic
-                            ? Icons.public
-                            : Icons.lock_outline,
+                        recipe.isPublic ? Icons.public : Icons.lock_outline,
                         size: 16,
                         color: recipe.isPublic
                             ? cs.primary
@@ -252,25 +313,32 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Tags
+                  // ---------- TAGS ----------
                   if (recipe.tags.isNotEmpty) ...[
                     Wrap(
                       spacing: 8,
-                      runSpacing: -4,
-                      children: recipe.tags
-                          .map(
-                            (t) => Chip(
-                              label: Text('#$t'),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                            ),
-                          )
-                          .toList(),
+                      children: recipe.tags.map((tag) {
+                        return InkWell(
+                          onTap: () {
+                            // ⭐ FIXED: opens Search tab WITH bottom nav
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => HomePage(
+                                  initialTab: 1,
+                                  initialQuery: "#$tag",
+                                ),
+                              ),
+                            );
+                          },
+                          child: Chip(label: Text("#$tag")),
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 16),
                   ],
 
-                  // Meta row: prep / cook / serves / difficulty
+                  // META
                   Card(
                     margin: EdgeInsets.zero,
                     child: Padding(
@@ -295,9 +363,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                           _MetaItem(
                             icon: Icons.restaurant_outlined,
                             label: 'Serves',
-                            value: recipe.servings != null
-                                ? '${recipe.servings}'
-                                : '—',
+                            value: recipe.servings?.toString() ?? '—',
                           ),
                           _MetaItem(
                             icon: Icons.leaderboard_outlined,
@@ -310,7 +376,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Description
+                  // DESCRIPTION
                   if (recipe.description != null &&
                       recipe.description!.trim().isNotEmpty) ...[
                     Text(
@@ -323,7 +389,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                     const SizedBox(height: 20),
                   ],
 
-                  // Ingredients card
+                  // INGREDIENTS
                   Text(
                     'Ingredients',
                     style: TextStyle(
@@ -335,8 +401,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                   const SizedBox(height: 8),
                   Card(
                     child: Padding(
-                      padding:
-                          const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      padding: const EdgeInsets.all(14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -348,15 +413,8 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                                 crossAxisAlignment:
                                     CrossAxisAlignment.start,
                                 children: [
-                                  const Text('• '),
-                                  Expanded(
-                                    child: Text(
-                                      ing,
-                                      style: const TextStyle(
-                                        height: 1.4,
-                                      ),
-                                    ),
-                                  ),
+                                  const Text("• "),
+                                  Expanded(child: Text(ing)),
                                 ],
                               ),
                             ),
@@ -366,7 +424,7 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Steps card
+                  // STEPS
                   Text(
                     'Steps',
                     style: TextStyle(
@@ -378,10 +436,10 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
                   const SizedBox(height: 8),
                   Card(
                     child: Padding(
-                      padding:
-                          const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      padding: const EdgeInsets.all(14),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
                         children: [
                           for (int i = 0; i < recipe.steps.length; i++)
                             Padding(
@@ -422,22 +480,21 @@ class _ViewRecipePageState extends State<ViewRecipePage> {
   }
 }
 
-/* ---------- small widget for meta icons row ---------- */
-
 class _MetaItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
   const _MetaItem({
     required this.icon,
     required this.label,
     required this.value,
   });
 
-  final IconData icon;
-  final String label;
-  final String value;
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

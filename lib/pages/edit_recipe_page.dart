@@ -78,7 +78,7 @@ class _EditRecipePageState extends State<EditRecipePage> {
   @override
   Widget build(BuildContext context) {
     final r = widget.recipe;
-    final currentImg = _newImage ?? null;
+    final currentImg = _newImage;
     final url = (r.imageUrls.isNotEmpty) ? r.imageUrls.first : null;
 
     return Scaffold(

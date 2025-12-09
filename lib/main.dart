@@ -7,7 +7,7 @@ import 'login_page.dart';
 import 'signup_page.dart';
 import 'home_page.dart';
 import 'onboarding_profile_flow.dart';
-import 'profile_page.dart';
+import 'my_profile_page.dart';
 import 'profile_edit.dart';
 import 'settings_page.dart';
 import 'theme_provider.dart';
@@ -96,7 +96,6 @@ class NibbleApp extends StatelessWidget {
       colorScheme: ColorScheme.dark(
         primary: brownMid,
         secondary: brownLight,
-        background: const Color(0xFF1E1E1E),
         surface: const Color(0xFF2A2A2A),
       ),
       scaffoldBackgroundColor: const Color(0xFF1E1E1E),
@@ -116,7 +115,7 @@ class NibbleApp extends StatelessWidget {
         '/signup': (_) => const SignUpPage(),
         '/home': (_) => const HomePage(),
         '/onboarding': (_) => const OnboardingProfileFlow(),
-        '/profile': (_) => ProfilePage(),
+        '/profile': (_) => MyProfilePage(),
         '/profile/edit': (_) => const ProfileEditPage(),
         '/settings': (_) => const SettingsPage(),
       },
