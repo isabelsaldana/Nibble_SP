@@ -315,7 +315,7 @@ class SavedService {
 
         if (!recipeSnap.exists) return null;
 
-        return Recipe.fromFirestore(
+        return Recipe.fromDoc(
           recipeSnap,
         );
       }).toList();

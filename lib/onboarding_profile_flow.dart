@@ -193,15 +193,13 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
       if (user == null) {
         throw StateError('You are signed out. Please log in again.');
       }
-
-      final service = UserService();
+  
 
       // 1) Reserve username (throws if taken)
       final handle = _usernameCtrl.text.trim().toLowerCase();
-      await service.reserveUsername(handle);
-
+      await UserService.reserveUsername(handle);
       // 2) Save full profile (no photoURL here)
-      await service.upsertProfile(user.uid, {
+      await UserService.upsertProfile(user.uid, {
         'displayName': _nameCtrl.text.trim(),
         'username': handle,
         'household': _household,

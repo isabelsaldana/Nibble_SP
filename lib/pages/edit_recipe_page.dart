@@ -18,14 +18,14 @@ class EditRecipePage extends StatefulWidget {
 
 class _EditRecipePageState extends State<EditRecipePage> {
   late TextEditingController _title;
-  late TextEditingController _desc;
+  late TextEditingController _description;
   late TextEditingController _ingredients;
   late TextEditingController _steps;
   bool _isPublic = true;
   Uint8List? _newImage;
   bool _saving = false;
 
-  final _svc = RecipeService();
+ 
   final _store = StorageService();
   final _uid = FirebaseAuth.instance.currentUser!.uid;
 
@@ -34,8 +34,8 @@ class _EditRecipePageState extends State<EditRecipePage> {
     super.initState();
     final r = widget.recipe;
     _title = TextEditingController(text: r.title);
-    _desc = TextEditingController(text: r.description ?? '');
     _ingredients = TextEditingController(text: r.ingredients.join(', '));
+    _description = TextEditingController(text: r.description ?? '');
     _steps = TextEditingController(text: r.steps.join('\n'));
     _isPublic = r.isPublic;
   }
@@ -55,8 +55,8 @@ class _EditRecipePageState extends State<EditRecipePage> {
 
       final updates = {
         'title': _title.text.trim(),
-        'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         'ingredients': ings,
+        'description': '',
         'steps': stps,
         'isPublic': _isPublic,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -68,7 +68,7 @@ class _EditRecipePageState extends State<EditRecipePage> {
         updates['imageUrls'] = [url];
       }
 
-      await _svc.update(widget.recipe.id, updates);
+      await RecipeService.updateRecipe(widget.recipe.id, updates);
       if (!mounted) return;
       Navigator.pop(context);
     } finally {
@@ -107,7 +107,7 @@ class _EditRecipePageState extends State<EditRecipePage> {
           const SizedBox(height: 16),
           TextField(controller: _title, decoration: const InputDecoration(labelText: 'Recipe Title')),
           const SizedBox(height: 8),
-          TextField(controller: _desc, decoration: const InputDecoration(labelText: 'Description')),
+          TextField(controller: _description, decoration: const InputDecoration(labelText: 'Description (optional)')),
           const SizedBox(height: 8),
           TextField(controller: _ingredients, decoration: const InputDecoration(labelText: 'Ingredients (comma-separated)')),
           const SizedBox(height: 8),

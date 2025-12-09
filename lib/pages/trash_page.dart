@@ -11,7 +11,6 @@ class TrashPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final svc = RecipeService();
     final uid = FirebaseAuth.instance.currentUser!.uid;
 
     return Scaffold(
@@ -19,7 +18,7 @@ class TrashPage extends StatelessWidget {
         title: const Text('Trash'),
       ),
       body: StreamBuilder<List<Recipe>>(
-        stream: svc.deleted_recipes(uid),
+        stream: RecipeService.deleted_recipes(uid),   // ✅ FIXED STREAM
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(
@@ -93,7 +92,7 @@ class TrashPage extends StatelessWidget {
                   trailing: PopupMenuButton<String>(
                     onSelected: (v) async {
                       if (v == 'restore') {
-                        await svc.deleteFromTrash(r.id);
+                        await RecipeService.restoreFromTrash(r.id);   // ✅ RESTORE
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -128,7 +127,7 @@ class TrashPage extends StatelessWidget {
 
                         if (!confirmed) return;
 
-                        await svc.deleteFromTrash(r.id);
+                        await RecipeService.deleteFromTrash(r.id); 
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(

@@ -85,7 +85,7 @@ class UserService {
       final snapshot = await _db
           .collection('users')
           .where('displayName', isGreaterThanOrEqualTo: q)
-          .where('displayName', isLessThan: q + '\uf8ff')
+          .where('displayName', isLessThan: '$q\uf8ff')
           .limit(20)
           .get();
 

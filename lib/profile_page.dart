@@ -164,7 +164,7 @@ class ProfilePage extends StatelessWidget {
 
               // ---------- My Recipes list ----------
               SliverToBoxAdapter(
-                child: MyRecipesSection(uid: me.uid),
+                child: MyRecipesSection(),
               ),
             ],
           ),
