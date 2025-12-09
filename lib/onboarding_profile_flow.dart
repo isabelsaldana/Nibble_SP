@@ -538,7 +538,7 @@ class _StepHouseholdGoal extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DropdownButtonFormField<int>(
-            value: household,
+            initialValue: household,
             decoration: const InputDecoration(
               labelText: 'Household size',
               border: OutlineInputBorder(),
@@ -608,7 +608,7 @@ class _StepCook extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButtonFormField<String>(
-            value: skill,
+            initialValue: skill,
             decoration: const InputDecoration(
               labelText: 'Skill level',
               border: OutlineInputBorder(),
@@ -756,7 +756,7 @@ class _StepEat extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: units,
+            initialValue: units,
             decoration: const InputDecoration(
               labelText: 'Units',
               border: OutlineInputBorder(),

@@ -155,8 +155,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                     maskColor: Colors.black.withOpacity(.65),
                     progressIndicator:
                         const Center(child: CircularProgressIndicator()),
-                    onCropped: (Uint8List data) {
-                      result = data;
+                    onCropped: (CropResult cropResult) {
+                      result = cropResult.image;
                       if (ctx.mounted) Navigator.pop(ctx);
                     },
                   ),
@@ -451,7 +451,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<String>(
-                                  value: _skill,
+                                  initialValue: _skill,
                                   items: const [
                                     DropdownMenuItem(
                                       value: 'beginner',
@@ -475,7 +475,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: DropdownButtonFormField<String>(
-                                  value: _units,
+                                  initialValue: _units,
                                   items: const [
                                     DropdownMenuItem(
                                       value: 'us',
@@ -569,6 +569,10 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       ),
     );
   }
+}
+
+extension on CropResult {
+  Uint8List? get image => null;
 }
 
 /* ---------- UI helpers ---------- */

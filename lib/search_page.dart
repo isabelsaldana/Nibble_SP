@@ -3,25 +3,16 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'public_profile_page.dart';
 import 'models/recipe.dart';
 import 'pages/view_recipe_page.dart';
-import 'services/user_service.dart'; // ⭐ REQUIRED for profile search
-
-String _timeAgo(DateTime? dt) {
-  if (dt == null) return '';
-  final now = DateTime.now();
-  final diff = now.difference(dt);
-
-  if (diff.inMinutes < 1) return 'just now';
-  if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-  if (diff.inHours < 24) return '${diff.inHours}h ago';
-  if (diff.inDays < 7) return '${diff.inDays}d ago';
-  final weeks = diff.inDays ~/ 7;
-  return '${weeks}w ago';
-}
+import 'services/user_service.dart';
 
 class SearchPage extends StatefulWidget {
-  const SearchPage({super.key});
+  final String? initialQuery;
+
+  const SearchPage({super.key, this.initialQuery});
+
   @override
   State<SearchPage> createState() => _SearchPageState();
 }
@@ -36,6 +27,12 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
+
+    if (widget.initialQuery != null) {
+      _controller.text = widget.initialQuery!;
+      _query = widget.initialQuery!.toLowerCase();
+    }
+
     _controller.addListener(() {
       final text = _controller.text.trim().toLowerCase();
 
@@ -48,13 +45,6 @@ class _SearchPageState extends State<SearchPage> {
     });
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  // ⭐ Suggestions from title, tags, ingredients
   Future<void> _updateSuggestions(String q) async {
     if (q.isEmpty) {
       setState(() => _suggestions = []);
@@ -62,19 +52,20 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     final snap = await FirebaseFirestore.instance
-        .collection('recipes')
+        .collection("recipes")
         .where("isPublic", isEqualTo: true)
-        .limit(10)
+        .limit(25)
         .get();
 
-    final Set<String> words = {};
+    final words = <String>{};
 
     for (final doc in snap.docs) {
       final d = doc.data();
 
       void add(dynamic v) {
-        if (v is String) words.addAll(v.toLowerCase().split(" "));
-        if (v is List) {
+        if (v is String) {
+          words.addAll(v.toLowerCase().split(" "));
+        } else if (v is List) {
           for (final x in v) {
             if (x is String) words.addAll(x.toLowerCase().split(" "));
           }
@@ -89,9 +80,17 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       _suggestions = words
           .where((w) => w.startsWith(q) && w.length > q.length)
-          .take(6)
+          .take(8)
           .toList();
     });
+  }
+
+  bool _matchesUser(Map<String, dynamic> u, String q) {
+    if (q.isEmpty) return false;
+    q = q.toLowerCase();
+
+    return u["usernameLower"]?.toString().contains(q) == true ||
+        u["displayName"]?.toString().toLowerCase().contains(q) == true;
   }
 
   @override
@@ -103,52 +102,79 @@ class _SearchPageState extends State<SearchPage> {
         .snapshots();
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Column(
           children: [
             _buildSearchBar(),
 
-            if (_suggestions.isNotEmpty)
-              _buildSuggestionDropdown(),
+            if (_suggestions.isNotEmpty) _buildSuggestionDropdown(),
 
             Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              child: StreamBuilder(
                 stream: recipeStream,
                 builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
+                  if (!snap.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
-                  final docs = snap.data?.docs ?? [];
-
-                  final List<_ScoredRecipe> results = [];
+                  final docs = snap.data!.docs;
+                  final List<_Hit> results = [];
 
                   for (final d in docs) {
                     final recipe = Recipe.fromFirestore(d);
                     final data = d.data();
 
-                    final blob = _buildBlob(data);
+                    final blob = _blob(data);
                     final score = _score(blob, _query);
 
                     if (_query.isEmpty || score > 0) {
-                      results.add(_ScoredRecipe(recipe, score));
+                      results.add(_Hit(recipe, score));
                     }
-                  }
-
-                  if (_query.isNotEmpty && results.isEmpty) {
-                    return _tryProfileSearch();
                   }
 
                   if (_query.isNotEmpty) {
                     results.sort((a, b) => b.score.compareTo(a.score));
                   }
 
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: results.length,
-                    itemBuilder: (_, i) {
-                      final r = results[i].recipe;
-                      return _RecipeListTile(recipe: r);
+                  return StreamBuilder(
+                    stream: UserService.searchUsers(_query),
+                    builder: (context, userSnap) {
+                      final users = (userSnap.data ?? [])
+                          .where((u) => _matchesUser(u, _query))
+                          .toList();
+
+                      return ListView(
+                        padding: const EdgeInsets.all(12),
+                        children: [
+                          if (users.isNotEmpty) _buildUserResults(users),
+
+                          if (results.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6, top: 12),
+                              child: Text(
+                                "Recipes",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.brown.shade700,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+
+                          ...results.map((hit) => _RecipeTile(recipe: hit.recipe)),
+
+                          if (_query.isNotEmpty &&
+                              users.isEmpty &&
+                              results.isEmpty)
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text('No results for "$_query"'),
+                              ),
+                            ),
+                        ],
+                      );
                     },
                   );
                 },
@@ -160,7 +186,6 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ⭐ SEARCH BAR
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -180,17 +205,17 @@ class _SearchPageState extends State<SearchPage> {
                 controller: _controller,
                 decoration: const InputDecoration(
                   border: InputBorder.none,
-                  hintText: "Search recipes, tags, ingredients, profiles…",
+                  hintText: "Search recipes, tags, profiles…",
                 ),
               ),
             ),
             if (_controller.text.isNotEmpty)
               IconButton(
                 icon: const Icon(Icons.clear),
-                onPressed: () => setState(() {
+                onPressed: () {
                   _controller.clear();
-                  _query = "";
-                }),
+                  setState(() => _query = "");
+                },
               ),
           ],
         ),
@@ -198,10 +223,9 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  // ⭐ DROPDOWN SUGGESTIONS
   Widget _buildSuggestionDropdown() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
       child: Material(
         elevation: 2,
         borderRadius: BorderRadius.circular(10),
@@ -226,46 +250,52 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  /* ---------------------------------------------------------
-     ⭐ If no recipes match, try username search instantly
-     --------------------------------------------------------- */
-  Widget _tryProfileSearch() {
-    return StreamBuilder(
-      stream: UserService.searchUsers(_query),
-      builder: (_, snap) {
-        if (!snap.hasData || snap.data!.isEmpty) {
-          return Center(
-            child: Text('No results for "$_query"'),
-          );
-        }
+  Widget _buildUserResults(List users) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 6, bottom: 4),
+          child: Text(
+            "Profiles",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ),
+        ...users.map((u) {
+          final username = u["username"];
+          final displayName = u["displayName"] ?? username;
+          final photo = u["photo"];
 
-        final users = snap.data!;
-
-        return ListView.builder(
-          itemCount: users.length,
-          itemBuilder: (_, i) {
-            final u = users[i];
-            return ListTile(
-              leading: u["photo"] != null
-                  ? CircleAvatar(backgroundImage: NetworkImage(u["photo"]))
+          return Card(
+            child: ListTile(
+              leading: photo != null
+                  ? CircleAvatar(backgroundImage: NetworkImage(photo))
                   : const CircleAvatar(child: Icon(Icons.person)),
-              title: Text(u["username"] ?? "Unknown"),
-              subtitle: Text(u["id"]),
-            );
-          },
-        );
-      },
+              title: Text(displayName),
+              subtitle: Text("@$username"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PublicProfilePage(uid: u["id"]),
+                  ),
+                );
+              },
+            ),
+          );
+        }),
+      ],
     );
   }
 }
 
-/* ---------------------------------------------------------
-   ⭐ SIMPLE LIST TILE (NO IMAGES IN SEARCH RESULTS)
-   --------------------------------------------------------- */
-
-class _RecipeListTile extends StatelessWidget {
+class _RecipeTile extends StatelessWidget {
   final Recipe recipe;
-  const _RecipeListTile({required this.recipe});
+
+  const _RecipeTile({required this.recipe});
 
   @override
   Widget build(BuildContext context) {
@@ -290,11 +320,7 @@ class _RecipeListTile extends StatelessWidget {
   }
 }
 
-/* ---------------------------------------------------------
-   ⭐ SEARCH SCORING SYSTEM
-   --------------------------------------------------------- */
-
-String _buildBlob(Map<String, dynamic> d) {
+String _blob(Map<String, dynamic> d) {
   final parts = <String>[];
 
   void add(dynamic v) {
@@ -319,9 +345,8 @@ int _score(String blob, String query) {
   if (query.isEmpty) return 0;
 
   int score = 0;
-  for (final part in query.split(" ")) {
-    if (part.isEmpty) continue;
-    score += _count(blob, part);
+  for (final word in query.split(" ")) {
+    if (word.isNotEmpty) score += _count(blob, word);
   }
   return score;
 }
@@ -336,8 +361,8 @@ int _count(String text, String term) {
   return count;
 }
 
-class _ScoredRecipe {
+class _Hit {
   final Recipe recipe;
   final int score;
-  _ScoredRecipe(this.recipe, this.score);
+  _Hit(this.recipe, this.score);
 }

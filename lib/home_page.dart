@@ -1,50 +1,51 @@
 // lib/home_page.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'login_page.dart';
 import 'feed_page.dart';
 import 'add_recipe_page.dart';
 import 'saved_recipes_page.dart';
-import 'profile_page.dart';
-import 'search_page.dart'; // 👈 make sure this import is here
+import 'my_profile_page.dart';
+import 'search_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final int initialTab;
+  final String? initialQuery;
+
+  const HomePage({
+    super.key,
+    this.initialTab = 0,
+    this.initialQuery,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
 
-  // Pages for the bottom nav tabs
-  late final List<Widget> _pages = [
-    const FeedPage(),         // 0
-    const SearchPage(),       // 1 👈 Search tab
-    AddRecipePage(            // 2
-      onPosted: () {
-        // after posting, jump to Profile tab (index 4)
-        setState(() {
-          _selectedIndex = 4;
-        });
-      },
-    ),
-    SavedRecipesPage(),       // 3
-    ProfilePage(),            // 4
-  ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialTab;
   }
 
   @override
   Widget build(BuildContext context) {
-    const brandBrown = Color(0xFF6B3E2E); // logo text color
+    const brandBrown = Color(0xFF6B3E2E);
+
+    final pages = [
+      const FeedPage(),
+      SearchPage(initialQuery: widget.initialQuery),
+      AddRecipePage(
+        onPosted: () {
+          setState(() => _selectedIndex = 4);
+        },
+      ),
+      SavedRecipesPage(),
+      MyProfilePage(),
+    ];
 
     return Scaffold(
       appBar: _selectedIndex == 0
@@ -64,11 +65,11 @@ class _HomePageState extends State<HomePage> {
               ),
             )
           : null,
-      body: _pages[_selectedIndex],
+      body: pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
+        onTap: (i) => setState(() => _selectedIndex = i),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
@@ -77,7 +78,7 @@ class _HomePageState extends State<HomePage> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.search),
-            label: 'Search', // 👈 new tab
+            label: 'Search',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.add_circle_outline),

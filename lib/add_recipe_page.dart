@@ -627,7 +627,7 @@ class _AddRecipePageState extends State<AddRecipePage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _difficulty,
+                    initialValue: _difficulty,
                     decoration:
                         _in.copyWith(labelText: 'Difficulty'),
                     items: const [
