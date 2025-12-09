@@ -55,7 +55,9 @@ class _EditRecipePageState extends State<EditRecipePage> {
         'title': _title.text.trim(),
         'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         'ingredients': ings,
+        'ingredientsLower': ings.map((e) => e.toLowerCase()).toList(), 
         'steps': stps,
+         'tags': widget.recipe.tags,        
         'isPublic': _isPublic,
       };
 

@@ -192,6 +192,7 @@ class _AddRecipePageState extends State<AddRecipePage> {
         description:
             _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         ingredients: ings,
+        ingredientsLower: ings.map((i) => i.toLowerCase()).toList(),  
         steps: stps,
         isPublic: _isPublic,
         imageUrls: const [], // will update after uploads
@@ -200,6 +201,7 @@ class _AddRecipePageState extends State<AddRecipePage> {
         servings: servings,
         difficulty: _difficulty,
         tags: _tags.toList(),
+        tagsLower: _tags.map((t) => t.toLowerCase()).toList(),
       );
 
       final id = await _svc.create(recipe, _uid);

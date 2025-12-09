@@ -76,7 +76,6 @@ class FeedPage extends StatelessWidget {
   }
 }
 
-/// A single recipe card in the feed, with save (bookmark) support.
 class _FeedRecipeCard extends StatefulWidget {
   const _FeedRecipeCard({required this.recipe});
 
@@ -91,10 +90,14 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
   bool _isSaved = false;
   bool _loading = false;
 
+  // Likes
+  bool _liked = false;
+
   @override
   void initState() {
     super.initState();
     _loadInitialSavedState();
+    _loadLike();
   }
 
   Future<void> _loadInitialSavedState() async {
@@ -110,8 +113,48 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
     setState(() => _isSaved = saved);
   }
 
+  Future<void> _loadLike() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final likeDoc = await FirebaseFirestore.instance
+        .collection('recipes')
+        .doc(widget.recipe.id)
+        .collection('likes')
+        .doc(user.uid)
+        .get();
+
+    if (!mounted) return;
+    setState(() => _liked = likeDoc.exists);
+  }
+
+  Future<void> _toggleLike() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final ref = FirebaseFirestore.instance
+          .collection('recipes')
+          .doc(widget.recipe.id)
+          .collection('likes')
+          .doc(user.uid);
+
+      if (_liked) {
+        await ref.delete();
+      } else {
+        await ref.set({'likedAt': FieldValue.serverTimestamp()});
+      }
+
+      if (!mounted) return;
+      setState(() => _liked = !_liked);
+    } catch (e) {
+      debugPrint("Like error: $e");
+    }
+  }
+
   Future<void> _onSavePressed() async {
     final user = FirebaseAuth.instance.currentUser;
+
     if (user == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -123,7 +166,6 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
       return;
     }
 
-    // If already saved, just unsave directly
     if (_isSaved) {
       setState(() => _loading = true);
       try {
@@ -140,167 +182,153 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
           ),
         );
       } finally {
-        if (mounted) {
-          setState(() => _loading = false);
-        }
+        if (mounted) setState(() => _loading = false);
       }
       return;
     }
 
-    // Not yet saved -> open the "Save to" bottom sheet
     await _showSaveBottomSheet(user.uid);
   }
 
+  // ⭐ FIXED — Correct structure & scroll to prevent overflow
   Future<void> _showSaveBottomSheet(String uid) async {
     await showModalBottomSheet(
       context: context,
-      isScrollControlled: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetCtx) {
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Row(
-                  children: [
-                    const Text(
-                      'Save to',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Save to',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(sheetCtx).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                SizedBox(
-                  height: 260,
-                  child: StreamBuilder<List<FolderPreview>>(
-                    stream: _savedSvc.folderPreviews(uid),
-                    builder: (ctx, snap) {
-                      if (snap.hasError) {
-                        return Center(
-                          child: Text(
-                            'Error loading collections: ${snap.error}',
-                            textAlign: TextAlign.center,
-                          ),
-                        );
-                      }
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(sheetCtx).pop(),
+                      ),
+                    ],
+                  ),
 
-                      if (!snap.hasData) {
-                        return const Center(
-                          child: CircularProgressIndicator(),
-                        );
-                      }
+                  const SizedBox(height: 4),
 
-                      // Hide the special "All" collection here
-                      final folders = (snap.data ?? [])
-                          .where((f) => f.name != 'All')
-                          .toList();
+                  SizedBox(
+                    height: 260,
+                    child: StreamBuilder<List<FolderPreview>>(
+                      stream: _savedSvc.folderPreviews(uid),
+                      builder: (ctx, snap) {
+                        if (snap.hasError) {
+                          return Center(
+                            child: Text('Error loading folders: ${snap.error}'),
+                          );
+                        }
+                        if (!snap.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
 
-                      if (folders.isEmpty) {
-                        return const Center(
-                          child: Text(
-                            'No collections yet.\nTap "New folder" below to create one.',
-                            textAlign: TextAlign.center,
-                          ),
-                        );
-                      }
+                        final folders = (snap.data ?? [])
+                            .where((f) => f.name != "All")
+                            .toList();
 
-                      return ListView.separated(
-                        itemCount: folders.length,
-                        separatorBuilder: (_, __) =>
-                            const Divider(height: 1),
-                        itemBuilder: (ctx, index) {
-                          final folder = folders[index];
+                        if (folders.isEmpty) {
+                          return const Center(
+                            child: Text(
+                              'No folders yet.\nTap "New folder" below to create one.',
+                              textAlign: TextAlign.center,
+                            ),
+                          );
+                        }
 
-                          return ListTile(
-                            leading: folder.imageUrl != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Image.network(
-                                      folder.imageUrl!,
+                        return ListView.separated(
+                          itemCount: folders.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1),
+                          itemBuilder: (ctx, i) {
+                            final folder = folders[i];
+                            return ListTile(
+                              leading: folder.imageUrl != null
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Image.network(
+                                        folder.imageUrl!,
+                                        width: 40,
+                                        height: 40,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  : Container(
                                       width: 40,
                                       height: 40,
-                                      fit: BoxFit.cover,
+                                      decoration: BoxDecoration(
+                                        color: Colors.brown.shade100,
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: const Icon(Icons.restaurant),
                                     ),
-                                  )
-                                : Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: Colors.brown.shade100,
-                                      borderRadius:
-                                          BorderRadius.circular(6),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: const Icon(
-                                      Icons.restaurant,
-                                      size: 20,
-                                    ),
-                                  ),
-                            title: Text(folder.name),
-                            subtitle: Text(
-                              folder.count == 1
-                                  ? '1 recipe'
-                                  : '${folder.count} recipes',
-                            ),
-                            trailing: const Icon(Icons.add),
-                            onTap: () async {
-                              // Save to this folder
-                              await _savedSvc.toggleSaved(
-                                uid: uid,
-                                recipe: widget.recipe,
-                                folder: folder.name,
-                              );
-                              if (!mounted) return;
-                              setState(() => _isSaved = true);
-                              Navigator.of(sheetCtx).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content:
-                                      Text('Saved to "${folder.name}"'),
-                                  duration:
-                                      const Duration(milliseconds: 900),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      );
+                              title: Text(folder.name),
+                              subtitle: Text(
+                                folder.count == 1
+                                    ? '1 recipe'
+                                    : '${folder.count} recipes',
+                              ),
+                              trailing: const Icon(Icons.add),
+                              onTap: () async {
+                                await _savedSvc.toggleSaved(
+                                  uid: uid,
+                                  recipe: widget.recipe,
+                                  folder: folder.name,
+                                );
+
+                                if (!mounted) return;
+                                setState(() => _isSaved = true);
+                                Navigator.of(sheetCtx).pop();
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(
+                                          'Saved to "${folder.name}"')),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  const Divider(),
+
+                  ListTile(
+                    leading: const Icon(Icons.add),
+                    title: const Text('New folder'),
+                    onTap: () async {
+                      final name =
+                          await _createFolderDialogFromFeed(sheetCtx, uid);
+                      if (name != null && name.isNotEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content: Text('Folder "$name" created')),
+                        );
+                      }
                     },
                   ),
-                ),
-                const Divider(),
-                // New folder button at bottom
-                ListTile(
-                  leading: const Icon(Icons.add),
-                  title: const Text('New folder'),
-                  onTap: () async {
-                    final name =
-                        await _createFolderDialogFromFeed(sheetCtx, uid);
-                    if (name != null && name.isNotEmpty) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Folder "$name" created'),
-                          duration: const Duration(milliseconds: 900),
-                        ),
-                      );
-                    }
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -309,31 +337,35 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
   }
 
   Future<String?> _createFolderDialogFromFeed(
-      BuildContext sheetCtx, String uid) async {
+      BuildContext context, String uid) async {
     final controller = TextEditingController();
 
-    final name = await showDialog<String>(
-      context: sheetCtx,
-      builder: (dialogCtx) {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) {
         return AlertDialog(
-          title: const Text('New folder'),
+          title: const Text('New Folder'),
           content: TextField(
             controller: controller,
             autofocus: true,
             decoration: const InputDecoration(
-              hintText: 'e.g. Desserts, Weeknight dinners',
+              labelText: 'Folder name',
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
+              onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
-              onPressed: () {
-                final raw = controller.text.trim();
-                if (raw.isEmpty) return;
-                Navigator.of(dialogCtx).pop(raw);
+            FilledButton(
+              onPressed: () async {
+                final name = controller.text.trim();
+                if (name.isNotEmpty) {
+                  await _savedSvc.createFolder(uid: uid, name: name);
+                  Navigator.pop(ctx, name);
+                } else {
+                  Navigator.pop(ctx);
+                }
               },
               child: const Text('Create'),
             ),
@@ -341,11 +373,6 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
         );
       },
     );
-
-    if (name == null || name.trim().isEmpty) return null;
-
-    await _savedSvc.createFolder(uid: uid, name: name.trim());
-    return name.trim();
   }
 
   @override
@@ -371,7 +398,6 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ---------- Image with Hero ----------
             Hero(
               tag: 'recipe_${r.id}',
               child: AspectRatio(
@@ -382,13 +408,11 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                         alignment: Alignment.center,
                         child: const Icon(Icons.restaurant, size: 40),
                       )
-                    : Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.brown.shade100,
-                          alignment: Alignment.center,
-                          child: const Icon(Icons.restaurant, size: 40),
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(0),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
                         ),
                       ),
               ),
@@ -399,7 +423,6 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ---------- Title ----------
                   Text(
                     r.title,
                     style: const TextStyle(
@@ -409,7 +432,6 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                   ),
                   const SizedBox(height: 4),
 
-                  // ---------- Description snippet ----------
                   if (r.description != null &&
                       r.description!.trim().isNotEmpty) ...[
                     Text(
@@ -421,7 +443,6 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                     const SizedBox(height: 8),
                   ],
 
-                  // ---------- Public + time + actions ----------
                   Row(
                     children: [
                       Text(
@@ -443,12 +464,19 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                         ),
                       ],
                       const Spacer(),
+
+                      // Like button
                       IconButton(
-                        icon: const Icon(Icons.favorite_border_outlined),
-                        onPressed: () {
-                          // later: hook up likes
-                        },
+                        icon: Icon(
+                          _liked
+                              ? Icons.favorite
+                              : Icons.favorite_border_outlined,
+                          color: _liked ? Colors.red : null,
+                        ),
+                        onPressed: _toggleLike,
                       ),
+
+                      // Save button
                       IconButton(
                         tooltip: _isSaved ? 'Unsave' : 'Save',
                         onPressed: _loading ? null : _onSavePressed,

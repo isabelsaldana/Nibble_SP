@@ -40,6 +40,7 @@ dependencies:
   image_cropper: ^11.0.0
   image_cropper_for_web: ^7.0.0
   google_fonts: ^6.3.2
+  flutter_rating_bar: ^4.0.1
 
   provider: ^6.1.5  # Added for dark mode toggle
 
