@@ -40,7 +40,7 @@ class AuthGate extends StatelessWidget {
             final hasUsername = (data['username'] is String) && (data['username'] as String).isNotEmpty;
 
             if (completed) {
-              return const HomePage();
+              return const HomePage(initialTab: 4);
             }
 
             // Safety net for older accounts: if they already have a username,
@@ -55,7 +55,7 @@ class AuthGate extends StatelessWidget {
                   }, SetOptions(merge: true));
                 } catch (_) {/* ignore */}
               });
-              return const HomePage();
+              return const HomePage(initialTab: 4);
             }
 
             // Default: needs onboarding (either no doc, or doc without username & flag)

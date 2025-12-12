@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'user_service.dart';
+import 'home_page.dart';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Inclusive option catalogs (centralized)
@@ -221,9 +222,13 @@ class _OnboardingProfileFlowState extends State<OnboardingProfileFlow> {
         const SnackBar(content: Text('Profile saved — welcome to Nibble!')),
       );
 
-      // 3) Go to Profile/Home
-      Navigator.pushNamedAndRemoveUntil(context, '/profile', (_) => false);
-      // or: Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+      // 3) Go to Home page, open Profile tab automatically
+Navigator.pushAndRemoveUntil(
+  context,
+  MaterialPageRoute(builder: (_) => const HomePage(initialTab: 4)),
+  (_) => false,
+);
+
 
     } catch (e) {
       if (!mounted) return;

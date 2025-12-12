@@ -108,6 +108,40 @@ class MyProfilePage extends StatelessWidget {
                           color: Colors.black54,
                         ),
                       ),
+Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    // Followers
+    Column(
+      children: [
+        Text(
+          (data["followerCount"] ?? 0).toString(),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        const Text("Followers"),
+      ],
+    ),
+    const SizedBox(width: 24),
+
+    // Following
+    Column(
+      children: [
+        Text(
+          (data["followingCount"] ?? 0).toString(),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        const Text("Following"),
+      ],
+    ),
+  ],
+),
+const SizedBox(height: 20),
 
                       if (bio.isNotEmpty) ...[
                         const SizedBox(height: 8),
