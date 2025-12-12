@@ -24,12 +24,15 @@ class PublicProfilePage extends StatelessWidget {
         final displayName = user["displayName"] ?? "Unknown";
         final username = user["username"] ?? "";
         final bio = user["bio"] ?? "";
+        final followerCount = user["followerCount"] ?? 0;
+        final followingCount = user["followingCount"] ?? 0;
 
         return Scaffold(
           appBar: AppBar(title: Text(displayName)),
           body: ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              // ------------------ PHOTO ------------------
               Center(
                 child: CircleAvatar(
                   radius: 48,
@@ -43,6 +46,7 @@ class PublicProfilePage extends StatelessWidget {
 
               const SizedBox(height: 16),
 
+              // ------------------ NAME ------------------
               Center(
                 child: Text(
                   displayName,
@@ -57,6 +61,50 @@ class PublicProfilePage extends StatelessWidget {
                 ),
               ),
 
+              const SizedBox(height: 12),
+
+              // ------------------ COUNTS ------------------
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Followers count
+                  Column(
+                    children: [
+                      Text(
+                        followerCount.toString(),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Text(
+                        "Followers",
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(width: 28),
+
+                  // Following count
+                  Column(
+                    children: [
+                      Text(
+                        followingCount.toString(),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Text(
+                        "Following",
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
               if (bio.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Center(
@@ -68,29 +116,9 @@ class PublicProfilePage extends StatelessWidget {
                 ),
               ],
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-              // ⭐ FOLLOWER COUNT
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection("users")
-                    .doc(uid)
-                    .collection("followers")
-                    .snapshots(),
-                builder: (context, snap) {
-                  final count = snap.data?.docs.length ?? 0;
-                  return Center(
-                    child: Text(
-                      "$count follower${count == 1 ? '' : 's'}",
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                    ),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 20),
-
-              // ⭐ Follow button (only if viewing someone else)
+              // ------------------ FOLLOW BUTTON ------------------
               if (me != null && me.uid != uid)
                 _FollowButton(myUid: me.uid, viewedUid: uid),
             ],
@@ -138,24 +166,49 @@ class _FollowButtonState extends State<_FollowButton> {
   }
 
   Future<void> _toggleFollow() async {
-    final ref = FirebaseFirestore.instance
+    final myUid = widget.myUid;
+    final viewedUid = widget.viewedUid;
+
+    final followerRef = FirebaseFirestore.instance
         .collection("users")
-        .doc(widget.viewedUid)
+        .doc(viewedUid)
         .collection("followers")
-        .doc(widget.myUid);
+        .doc(myUid);
 
-    try {
-      if (_following) {
-        await ref.delete();
-      } else {
-        await ref.set({"followedAt": Timestamp.now()});
-      }
+    final followingRef = FirebaseFirestore.instance
+        .collection("users")
+        .doc(myUid)
+        .collection("following")
+        .doc(viewedUid);
 
-      if (mounted) {
-        setState(() => _following = !_following);
-      }
-    } catch (e) {
-      debugPrint("Follow error: $e");
+    if (_following) {
+      // ---------------- UNFOLLOW ----------------
+      await followerRef.delete();
+      await followingRef.delete();
+
+      FirebaseFirestore.instance.collection("users").doc(viewedUid).update({
+        "followerCount": FieldValue.increment(-1),
+      });
+
+      FirebaseFirestore.instance.collection("users").doc(myUid).update({
+        "followingCount": FieldValue.increment(-1),
+      });
+    } else {
+      // ---------------- FOLLOW ----------------
+      await followerRef.set({"followedAt": Timestamp.now()});
+      await followingRef.set({"followedAt": Timestamp.now()});
+
+      FirebaseFirestore.instance.collection("users").doc(viewedUid).update({
+        "followerCount": FieldValue.increment(1),
+      });
+
+      FirebaseFirestore.instance.collection("users").doc(myUid).update({
+        "followingCount": FieldValue.increment(1),
+      });
+    }
+
+    if (mounted) {
+      setState(() => _following = !_following);
     }
   }
 
