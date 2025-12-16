@@ -51,8 +51,7 @@ class TrashPage extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final r = items[index];
-              final imageUrl =
-                  r.imageUrls.isNotEmpty ? r.imageUrls.first : null;
+              final imageUrl = r.imageUrls.isNotEmpty ? r.imageUrls.first : null;
 
               return Card(
                 shape: RoundedRectangleBorder(
@@ -78,8 +77,7 @@ class TrashPage extends StatelessWidget {
                             width: 48,
                             height: 48,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const CircleAvatar(
+                            errorBuilder: (_, __, ___) => const CircleAvatar(
                               child: Icon(Icons.restaurant),
                             ),
                           ),
@@ -93,12 +91,12 @@ class TrashPage extends StatelessWidget {
                   trailing: PopupMenuButton<String>(
                     onSelected: (v) async {
                       if (v == 'restore') {
-                        await svc.deleteFromTrash(r.id);
+                        // ✅ actually restore it back to /recipes
+                        await svc.restoreFromTrash(r.id);
+
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Recipe restored'),
-                            ),
+                            const SnackBar(content: Text('Recipe restored')),
                           );
                         }
                       } else if (v == 'delete_forever') {
@@ -128,7 +126,9 @@ class TrashPage extends StatelessWidget {
 
                         if (!confirmed) return;
 
-                        await svc.deleteFromTrash(r.id);
+                        // ✅ actually delete it from /deleted_recipes
+                        await svc.deleteForeverFromTrash(r.id);
+
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(

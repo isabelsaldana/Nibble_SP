@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'auth_gate.dart';
 import 'login_page.dart';
 import 'signup_page.dart';
@@ -12,12 +12,25 @@ import 'profile_edit.dart';
 import 'settings_page.dart';
 import 'theme_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.playIntegrity,
+  );
+
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+  );
+
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => ThemeProvider(),
@@ -42,11 +55,11 @@ class NibbleApp extends StatelessWidget {
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
           seedColor: brownMid, brightness: Brightness.light),
-      scaffoldBackgroundColor: brownVeryLight,
+      scaffoldBackgroundColor: const Color.fromARGB(255, 247, 247, 247),
       appBarTheme: const AppBarTheme(
         elevation: 0,
         centerTitle: true,
-        backgroundColor: brownVeryLight,
+        backgroundColor: Color.fromARGB(255, 251, 251, 251),
         foregroundColor: Colors.black87,
         titleTextStyle: TextStyle(
             fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87),
@@ -59,9 +72,19 @@ class NibbleApp extends StatelessWidget {
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+
         backgroundColor: brownLight.withOpacity(0.25),
         selectedColor: brownDark.withOpacity(0.18),
+
+        // ✅ make chip text dark brown
+        labelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: brownDark,
+        ),
+
+        // optional: makes FilterChip checkmark match
+        checkmarkColor: brownDark,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: brownDark,

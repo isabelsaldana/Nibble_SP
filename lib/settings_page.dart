@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'theme_provider.dart';
+import 'pages/trash_page.dart';
+
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -68,6 +70,20 @@ class SettingsPage extends StatelessWidget {
             title: const Text('Edit profile'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.pushNamed(context, '/profile/edit'),
+          ),
+
+          // ✅ Recently Deleted Recipes moved here
+          ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('Recently Deleted Recipes'),
+            subtitle: const Text('View and restore deleted recipes'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TrashPage()),
+              );
+            },
           ),
 
           // Preferences

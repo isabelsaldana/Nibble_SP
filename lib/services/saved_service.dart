@@ -1,36 +1,30 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import '../models/recipe.dart';
 
 class SavedService {
   final _db = FirebaseFirestore.instance;
 
+  /// This is your "All recipes" collection.
+  static const String generalFolder = 'General';
+
   /// Subcollection: users/{uid}/saved_recipes/{recipeId}
   CollectionReference<Map<String, dynamic>> _savedCol(String uid) {
-    return _db
-        .collection('users')
-        .doc(uid)
-        .collection('saved_recipes');
+    return _db.collection('users').doc(uid).collection('saved_recipes');
   }
 
   /// Subcollection: users/{uid}/folders/{folderName}
-  /// We use the folder name as the document id for simplicity.
   CollectionReference<Map<String, dynamic>> _folderCol(String uid) {
-    return _db
-        .collection('users')
-        .doc(uid)
-        .collection('folders');
+    return _db.collection('users').doc(uid).collection('folders');
   }
 
-  /// Stream: is this recipe saved by this user?
+  // =======================
+  //  STREAMS / CHECKS
+  // =======================
+
   Stream<bool> isSavedStream(String uid, String recipeId) {
-    return _savedCol(uid)
-        .doc(recipeId)
-        .snapshots()
-        .map((snap) => snap.exists);
+    return _savedCol(uid).doc(recipeId).snapshots().map((snap) => snap.exists);
   }
 
-  /// One-time check: is this recipe saved by this user?
   Future<bool> isSaved({
     required String uid,
     required String recipeId,
@@ -39,131 +33,146 @@ class SavedService {
     return doc.exists;
   }
 
-  /// Toggle saved / unsaved for a recipe in a given folder.
-  ///
-  /// On save:
-  ///   - writes to saved_recipes
-  ///   - ensures / updates a folder doc
-  ///   - if folder cover is "auto", it becomes the latest recipe's image
-  ///
-  /// On unsave:
-  ///   - delegates to [removeSaved] which recomputes recipeCount
-  ///     and (for auto covers) the latest remaining image.
-  Future<void> toggleSaved({
+  Stream<DocumentSnapshot<Map<String, dynamic>>> savedDocStream(
+    String uid,
+    String recipeId,
+  ) {
+    return _savedCol(uid).doc(recipeId).snapshots();
+  }
+
+  // =======================
+  //  SAVE / UNSAVE (MULTI)
+  // =======================
+
+  /// Ensure a recipe is saved (at least to General).
+  /// If [alsoAddFolder] is provided, it will also be added.
+  Future<void> ensureSaved({
     required String uid,
     required Recipe recipe,
-    String folder = 'General',
+    String? alsoAddFolder,
   }) async {
     final savedRef = _savedCol(uid).doc(recipe.id);
-    final savedSnap = await savedRef.get();
+    final snap = await savedRef.get();
 
-    if (savedSnap.exists) {
-      // -------- UNSAVE --------
-      await removeSaved(uid: uid, recipeId: recipe.id);
-      return;
+    final imageUrl = recipe.imageUrls.isNotEmpty ? recipe.imageUrls.first : null;
+
+    final Set<String> folders = {generalFolder};
+    if (alsoAddFolder != null && alsoAddFolder.trim().isNotEmpty) {
+      folders.add(alsoAddFolder.trim());
     }
 
-    // -------- SAVE --------
-    final imageUrl =
-        recipe.imageUrls.isNotEmpty ? recipe.imageUrls.first : null;
-
-    await savedRef.set({
-      'recipeId': recipe.id,
-      'folder': folder,
-      'imageUrl': imageUrl,
-      'savedAt': FieldValue.serverTimestamp(),
-    });
-
-    final folderRef = _folderCol(uid).doc(folder);
-    final folderSnap = await folderRef.get();
-
-    if (!folderSnap.exists) {
-      // New folder created implicitly by this save, auto cover
-      await folderRef.set({
-        'name': folder,
-        'coverImageUrl': imageUrl,
-        'coverIsCustom': false,
-        'recipeCount': 1,
-        'createdAt': FieldValue.serverTimestamp(),
+    if (!snap.exists) {
+      await savedRef.set({
+        'recipeId': recipe.id,
+        'imageUrl': imageUrl,
+        'savedAt': FieldValue.serverTimestamp(),
+        'folders': folders.toList(),
       });
     } else {
-      final data = folderSnap.data() ?? {};
-      final int prevCount = (data['recipeCount'] as int?) ?? 0;
-      final bool coverIsCustom = (data['coverIsCustom'] as bool?) ?? false;
-      String? coverImageUrl = data['coverImageUrl'] as String?;
+      // Backward compat: merge any legacy "folder" into folders
+      final data = snap.data() ?? {};
+      final legacyFolder = data['folder'] as String?;
+      final existingFolders = _readFoldersFromSavedDoc(data);
 
-      // If cover is auto and we have an image, use the *latest saved* image.
-      if (!coverIsCustom && imageUrl != null) {
-        coverImageUrl = imageUrl;
-      }
+      final merged = <String>{
+        ...existingFolders,
+        generalFolder,
+        if (legacyFolder != null && legacyFolder.trim().isNotEmpty) legacyFolder.trim(),
+        ...folders,
+      };
 
-      await folderRef.set(
-        {
-          'name': folder,
-          'recipeCount': prevCount + 1,
-          'coverImageUrl': coverImageUrl,
-          'coverIsCustom': coverIsCustom,
-        },
+      await savedRef.set(
+        {'folders': merged.toList()},
         SetOptions(merge: true),
       );
     }
+
+    await _ensureFolderDoc(uid, generalFolder);
+    if (alsoAddFolder != null &&
+        alsoAddFolder.trim().isNotEmpty &&
+        alsoAddFolder.trim() != generalFolder) {
+      await _ensureFolderDoc(uid, alsoAddFolder.trim());
+    }
+
+    await _recomputeAllFolderMeta(uid);
   }
 
-  /// Explicit remove (used from Saved page “bookmark” icon) or from toggle.
+  /// Toggle membership of a recipe in a folder.
   ///
-  /// After deleting the saved recipe, we recompute:
-  ///   - recipeCount
-  ///   - auto cover (latest remaining recipe's image)
-  /// Custom covers are preserved.
+  /// - If recipe isn't saved, this will save it (General + folder).
+  /// - General cannot be removed.
+  Future<void> toggleInFolder({
+    required String uid,
+    required Recipe recipe,
+    required String folderName,
+  }) async {
+    final folder = folderName.trim();
+    if (folder.isEmpty) return;
+
+    // General is locked (always included)
+    if (folder == generalFolder) {
+      await ensureSaved(uid: uid, recipe: recipe);
+      return;
+    }
+
+    final savedRef = _savedCol(uid).doc(recipe.id);
+    final snap = await savedRef.get();
+
+    if (!snap.exists) {
+      await ensureSaved(uid: uid, recipe: recipe, alsoAddFolder: folder);
+      return;
+    }
+
+    final data = snap.data() ?? {};
+    final folders = _readFoldersFromSavedDoc(data).toSet();
+
+    folders.add(generalFolder);
+
+    if (folders.contains(folder)) {
+      folders.remove(folder);
+    } else {
+      folders.add(folder);
+      await _ensureFolderDoc(uid, folder);
+    }
+
+    await savedRef.set(
+      {'folders': folders.toList()},
+      SetOptions(merge: true),
+    );
+
+    await _recomputeAllFolderMeta(uid);
+  }
+
+  /// Remove saved completely (deletes the saved_recipes doc).
   Future<void> removeSaved({
     required String uid,
     required String recipeId,
   }) async {
-    final savedRef = _savedCol(uid).doc(recipeId);
-    final snap = await savedRef.get();
+    final ref = _savedCol(uid).doc(recipeId);
+    final snap = await ref.get();
     if (!snap.exists) return;
 
-    final data = snap.data() ?? {};
-    final folderName = (data['folder'] as String?) ?? 'General';
-
-    await savedRef.delete();
-
-    final folderRef = _folderCol(uid).doc(folderName);
-    final folderSnap = await folderRef.get();
-
-    if (!folderSnap.exists) {
-      // No folder doc to update (older data) – nothing more to do.
-      return;
-    }
-
-    final folderData = folderSnap.data() ?? {};
-    final bool coverIsCustom = (folderData['coverIsCustom'] as bool?) ?? false;
-    final String? customCover = folderData['coverImageUrl'] as String?;
-
-    final meta = await _computeFolderMeta(uid, folderName);
-
-    await folderRef.set(
-      {
-        'name': folderName,
-        'recipeCount': meta.count,
-        'coverImageUrl':
-            coverIsCustom ? customCover : meta.coverImageUrl,
-        'coverIsCustom': coverIsCustom,
-      },
-      SetOptions(merge: true),
-    );
+    await ref.delete();
+    await _recomputeAllFolderMeta(uid);
   }
 
-  /// Create an empty folder (no recipes yet), optionally with a custom cover.
+  // =======================
+  //  FOLDERS CRUD
+  // =======================
+
   Future<void> createFolder({
     required String uid,
     required String name,
     String? coverImageUrl,
   }) async {
-    final folderRef = _folderCol(uid).doc(name);
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    if (trimmed == generalFolder) return;
+
+    final folderRef = _folderCol(uid).doc(trimmed);
     await folderRef.set(
       {
-        'name': name,
+        'name': trimmed,
         'coverImageUrl': coverImageUrl,
         'coverIsCustom': coverImageUrl != null,
         'recipeCount': 0,
@@ -173,10 +182,6 @@ class SavedService {
     );
   }
 
-  /// Update folder cover image (used when user uploads a custom cover).
-  ///
-  /// We treat this as a *custom* cover and do not auto-change it later.
-  /// Also ensures the folder doc exists (including for "All").
   Future<void> updateFolderCover({
     required String uid,
     required String folderName,
@@ -197,84 +202,109 @@ class SavedService {
     );
   }
 
-  /// Delete a folder metadata doc.
-  ///
-  /// This removes the folder tile from the UI but does NOT delete
-  /// any saved_recipes. Those recipes will still appear under "All".
+  /// Delete folder metadata doc.
+  /// - General cannot be deleted unless no saved recipes exist.
+  /// - Deleting a folder ALSO removes that folder from all saved docs.
   Future<void> deleteFolder({
     required String uid,
     required String folderName,
   }) async {
-    await _folderCol(uid).doc(folderName).delete();
+    final folder = folderName.trim();
+    if (folder.isEmpty) return;
+
+    if (folder == generalFolder) {
+      final meta = await _computeGeneralMeta(uid);
+      if (meta.count > 0) {
+        throw Exception("Can't delete General unless there are no saved recipes.");
+      }
+      await _folderCol(uid).doc(folder).delete();
+      return;
+    }
+
+    // Remove folder from all saved docs that have it
+    final savedSnap = await _savedCol(uid).get();
+    final batch = _db.batch();
+
+    for (final doc in savedSnap.docs) {
+      final data = doc.data();
+      final folders = _readFoldersFromSavedDoc(data).toSet();
+      if (!folders.contains(folder)) continue;
+
+      folders.remove(folder);
+      folders.add(generalFolder);
+
+      batch.set(
+        doc.reference,
+        {'folders': folders.toList()},
+        SetOptions(merge: true),
+      );
+    }
+
+    batch.delete(_folderCol(uid).doc(folder));
+    await batch.commit();
+
+    await _recomputeAllFolderMeta(uid);
   }
 
-  /// Rename a folder (e.g. "General" -> "Dinner").
-  ///
-  /// - Copies the folder metadata to a new doc with [newName]
-  /// - Updates all saved_recipes in that folder to the new name
-  /// - Deletes the old folder doc
+  /// Rename a folder:
+  /// - Updates folder doc id and name
+  /// - Updates membership in all saved docs (folders array)
   Future<void> renameFolder({
     required String uid,
     required String oldName,
     required String newName,
   }) async {
-    if (oldName == newName) return;
-    if (oldName == 'All') return; // don't rename All
+    final o = oldName.trim();
+    final n = newName.trim();
+    if (o.isEmpty || n.isEmpty) return;
+    if (o == n) return;
 
-    final folderCol = _folderCol(uid);
-    final oldRef = folderCol.doc(oldName);
+    if (o == generalFolder) return;
+    if (n == generalFolder) return;
+
+    final oldRef = _folderCol(uid).doc(o);
     final oldSnap = await oldRef.get();
     if (!oldSnap.exists) return;
 
     final data = oldSnap.data() ?? {};
+    final newRef = _folderCol(uid).doc(n);
 
-    final newRef = folderCol.doc(newName);
     final batch = _db.batch();
 
-    // Copy metadata to new doc (update the name field)
-    final Map<String, dynamic> newData =
-        Map<String, dynamic>.from(data);
-    newData['name'] = newName;
+    final newData = Map<String, dynamic>.from(data);
+    newData['name'] = n;
     batch.set(newRef, newData);
-
-    // Update all saved_recipes that point at old folder name
-    final savedSnap = await _savedCol(uid)
-        .where('folder', isEqualTo: oldName)
-        .get();
-
-    for (final doc in savedSnap.docs) {
-      batch.update(doc.reference, {'folder': newName});
-    }
-
-    // Delete old folder doc
     batch.delete(oldRef);
 
+    // Update saved docs
+    final savedSnap = await _savedCol(uid).get();
+    for (final doc in savedSnap.docs) {
+      final d = doc.data();
+      final folders = _readFoldersFromSavedDoc(d).toSet();
+      if (!folders.contains(o)) continue;
+
+      folders.remove(o);
+      folders.add(n);
+      folders.add(generalFolder);
+
+      batch.set(
+        doc.reference,
+        {'folders': folders.toList()},
+        SetOptions(merge: true),
+      );
+    }
+
     await batch.commit();
+    await _recomputeAllFolderMeta(uid);
   }
 
-  /// Stream of folder names (if you need them elsewhere).
-  Stream<List<String>> folders(String uid) {
-    return _folderCol(uid)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        return (data['name'] as String?) ?? doc.id;
-      }).toList();
-    });
-  }
+  // =======================
+  //  UI STREAMS
+  // =======================
 
-  /// Stream of folder previews: folder name + cover image + recipe count.
-  ///
-  /// Includes any folder docs we have:
-  ///  - real folders (Desserts, Lunch, etc.)
-  ///  - plus a special "All" doc if we ever set a cover for All.
+  /// Folder previews (General always present, first)
   Stream<List<FolderPreview>> folderPreviews(String uid) {
-    return _folderCol(uid)
-        // no orderBy here; we sort in memory so docs without 'createdAt'
-        // (like a newly created "All" cover) still show up
-        .snapshots()
-        .map((snapshot) {
+    return _folderCol(uid).snapshots().map((snapshot) {
       final list = snapshot.docs.map((doc) {
         final data = doc.data();
         return FolderPreview(
@@ -282,42 +312,49 @@ class SavedService {
           imageUrl: data['coverImageUrl'] as String?,
           count: (data['recipeCount'] as int?) ?? 0,
         );
-      }).toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
+      }).toList();
+
+      final hasGeneral = list.any((f) => f.name == generalFolder);
+      if (!hasGeneral) {
+        list.insert(0, FolderPreview(name: generalFolder, imageUrl: null, count: 0));
+      }
+
+      list.sort((a, b) {
+        if (a.name == generalFolder) return -1;
+        if (b.name == generalFolder) return 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
       return list;
     });
   }
 
-  /// Stream of full Recipe objects the user has saved.
+  /// Saved recipes stream.
   ///
-  /// If `folder` is provided, we filter by folder on the client side.
+  /// IMPORTANT: This avoids Firestore composite-index issues by:
+  /// - Always querying ORDER BY savedAt
+  /// - Filtering by folder on the client
   Stream<List<Recipe>> savedRecipes(String uid, {String? folder}) {
     final query = _savedCol(uid).orderBy('savedAt', descending: true);
 
     return query.snapshots().asyncMap((snapshot) async {
-      final docs = folder == null
+      final f = (folder == null || folder == generalFolder) ? null : folder.trim();
+
+      final docs = f == null
           ? snapshot.docs
           : snapshot.docs.where((d) {
               final data = d.data();
-              final f = data['folder'] as String?;
-              return f == folder;
+              final folders = _readFoldersFromSavedDoc(data);
+              return folders.contains(f);
             }).toList();
 
       if (docs.isEmpty) return <Recipe>[];
 
       final futures = docs.map((savedDoc) async {
         final recipeId = savedDoc.id;
-
-        final recipeSnap = await _db
-            .collection('recipes')
-            .doc(recipeId)
-            .get();
-
+        final recipeSnap = await _db.collection('recipes').doc(recipeId).get();
         if (!recipeSnap.exists) return null;
-
-        return Recipe.fromFirestore(
-          recipeSnap,
-        );
+        return Recipe.fromFirestore(recipeSnap);
       }).toList();
 
       final results = await Future.wait(futures);
@@ -325,33 +362,104 @@ class SavedService {
     });
   }
 
-  /// Internal helper: count recipes in a folder + find the latest image.
-  Future<_FolderMeta> _computeFolderMeta(
-    String uid,
-    String folderName,
-  ) async {
-    final snap = await _savedCol(uid)
-        .orderBy('savedAt', descending: true)
-        .get();
+  // =======================
+  //  INTERNAL HELPERS
+  // =======================
 
-    int count = 0;
-    String? cover;
+  List<String> _readFoldersFromSavedDoc(Map<String, dynamic> data) {
+    final raw = data['folders'];
+    final out = <String>{generalFolder};
 
-    for (final doc in snap.docs) {
-      final data = doc.data();
-      final f = (data['folder'] as String?) ?? 'General';
-      if (f != folderName) continue;
-
-      count++;
-
-      final img = data['imageUrl'] as String?;
-      if (cover == null && img != null) {
-        // Because we ordered by savedAt desc, first hit is the latest.
-        cover = img;
+    if (raw is List) {
+      for (final e in raw) {
+        final s = e.toString().trim();
+        if (s.isNotEmpty) out.add(s);
       }
     }
 
-    return _FolderMeta(count: count, coverImageUrl: cover);
+    // Backward compat: if legacy "folder" exists, include it too
+    final legacy = data['folder'] as String?;
+    if (legacy != null && legacy.trim().isNotEmpty) {
+      out.add(legacy.trim());
+    }
+
+    return out.toList();
+  }
+
+  Future<void> _ensureFolderDoc(String uid, String folderName) async {
+    final ref = _folderCol(uid).doc(folderName);
+    final snap = await ref.get();
+    if (snap.exists) return;
+
+    await ref.set({
+      'name': folderName,
+      'coverImageUrl': null,
+      'coverIsCustom': false,
+      'recipeCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> _recomputeAllFolderMeta(String uid) async {
+    // Make sure General exists
+    await _ensureFolderDoc(uid, generalFolder);
+
+    final savedSnap = await _savedCol(uid).orderBy('savedAt', descending: true).get();
+    final folderSnap = await _folderCol(uid).get();
+
+    final folderDocs = {
+      for (final d in folderSnap.docs) d.id: d.data(),
+    };
+
+    // counts + latest cover per folder (latest savedAt that belongs to that folder)
+    final Map<String, int> counts = {};
+    final Map<String, String?> covers = {};
+
+    void bump(String folder, String? imageUrl) {
+      counts[folder] = (counts[folder] ?? 0) + 1;
+      covers.putIfAbsent(folder, () => (imageUrl != null && imageUrl.trim().isNotEmpty) ? imageUrl : null);
+    }
+
+    for (final doc in savedSnap.docs) {
+      final data = doc.data();
+      final img = data['imageUrl'] as String?;
+      final folders = _readFoldersFromSavedDoc(data);
+
+      for (final f in folders) {
+        bump(f, img);
+      }
+    }
+
+    final batch = _db.batch();
+
+    // Update every existing folder doc (and General) with accurate count/cover (unless custom cover)
+    final allFolderNames = <String>{...folderDocs.keys, generalFolder, ...counts.keys};
+
+    for (final name in allFolderNames) {
+      final ref = _folderCol(uid).doc(name);
+      final existing = folderDocs[name] ?? {};
+      final coverIsCustom = (existing['coverIsCustom'] as bool?) ?? false;
+      final customCover = existing['coverImageUrl'] as String?;
+
+      batch.set(
+        ref,
+        {
+          'name': name,
+          'recipeCount': counts[name] ?? 0,
+          'coverIsCustom': coverIsCustom,
+          'coverImageUrl': coverIsCustom ? customCover : covers[name],
+          if (!folderDocs.containsKey(name)) 'createdAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<_FolderMeta> _computeGeneralMeta(String uid) async {
+    final snap = await _savedCol(uid).get();
+    return _FolderMeta(count: snap.docs.length, coverImageUrl: null);
   }
 }
 
@@ -368,13 +476,10 @@ class FolderPreview {
   });
 }
 
-/// Internal metadata holder for recomputing folder info.
 class _FolderMeta {
   final int count;
   final String? coverImageUrl;
 
-  _FolderMeta({
-    required this.count,
-    required this.coverImageUrl,
-  });
+  _FolderMeta({required this.count, required this.coverImageUrl});
 }
+

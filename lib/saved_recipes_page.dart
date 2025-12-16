@@ -19,8 +19,8 @@ class SavedRecipesPage extends StatefulWidget {
 class _SavedRecipesPageState extends State<SavedRecipesPage> {
   final _saved = SavedService();
 
-  bool _showFolders = true;      // true = folder grid, false = recipe grid
-  String? _selectedFolder;       // null = All
+  bool _showFolders = true; // true = folder grid, false = recipe grid
+  String _selectedFolder = SavedService.generalFolder; // General = "All recipes"
 
   @override
   Widget build(BuildContext context) {
@@ -33,9 +33,7 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
 
     return Scaffold(
       body: SafeArea(
-        child: _showFolders
-            ? _buildFolderGrid(uid)
-            : _buildFolderContents(uid),
+        child: _showFolders ? _buildFolderGrid(uid) : _buildFolderContents(uid),
       ),
     );
   }
@@ -60,26 +58,7 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final allFolders = snap.data ?? [];
-
-        // Separate special "All" doc (if present) from real folders
-        FolderPreview? allPreview;
-        final realFolders = <FolderPreview>[];
-        for (final f in allFolders) {
-          if (f.name == 'All') {
-            allPreview = f;
-          } else {
-            realFolders.add(f);
-          }
-        }
-
-        final totalCount =
-            realFolders.fold<int>(0, (sum, f) => sum + f.count);
-
-        // Grid items now:
-        // index 0     => "All"
-        // 1..n        => existing folders
-        final itemCount = realFolders.length + 1;
+        final folders = snap.data ?? [];
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,44 +84,21 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
                 ],
               ),
             ),
+
             Expanded(
               child: GridView.builder(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   mainAxisSpacing: 10,
                   crossAxisSpacing: 10,
                   childAspectRatio: 3 / 4,
                 ),
-                itemCount: itemCount,
+                itemCount: folders.length,
                 itemBuilder: (context, index) {
-                  // "All" tile
-                  if (index == 0) {
-                    final imageUrl = allPreview?.imageUrl;
-
-                    final subtitle = totalCount == 1
-                        ? '1 recipe'
-                        : '$totalCount recipes';
-
-                    return _FolderGridTile(
-                      label: 'All',
-                      subtitle: subtitle,
-                      imageUrl: imageUrl,
-                      onTap: () {
-                        setState(() {
-                          _selectedFolder = null; // All
-                          _showFolders = false;
-                        });
-                      },
-                    );
-                  }
-
-                  // Real folder tiles
-                  final folder = realFolders[index - 1];
-                  final subtitle = folder.count == 1
-                      ? '1 recipe'
-                      : '${folder.count} recipes';
+                  final folder = folders[index];
+                  final subtitle =
+                      folder.count == 1 ? '1 recipe' : '${folder.count} recipes';
 
                   return _FolderGridTile(
                     label: folder.name,
@@ -169,163 +125,166 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
   // =======================
 
   Widget _buildFolderContents(String uid) {
-    final folderName = _selectedFolder ?? 'All';
-    final isAll = folderName == 'All';
+    final folderName = _selectedFolder;
+    final isGeneral = folderName == SavedService.generalFolder;
 
-    return Column(
-      children: [
-        // Header row with back + title + menu
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  setState(() {
-                    _showFolders = true;
-                  });
-                },
-              ),
-              const SizedBox(width: 4),
-              Text(
-                folderName,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              PopupMenuButton<_FolderMenuAction>(
-                icon: const Icon(Icons.more_vert),
-                onSelected: (action) {
-                  switch (action) {
-                    case _FolderMenuAction.rename:
-                      _renameFolder(uid, folderName);
-                      break;
-                    case _FolderMenuAction.cover:
-                      _changeFolderCover(uid, folderName);
-                      break;
-                    case _FolderMenuAction.delete:
-                      _confirmDeleteFolder(uid, folderName);
-                      break;
-                  }
-                },
-                itemBuilder: (ctx) {
-                  final items =
-                      <PopupMenuEntry<_FolderMenuAction>>[];
+    return StreamBuilder<List<Recipe>>(
+      stream: _saved.savedRecipes(uid, folder: folderName),
+      builder: (context, snap) {
+        final items = snap.data ?? [];
+        final canDeleteGeneral = isGeneral && items.isEmpty;
 
-                  if (!isAll) {
-                    items.add(
-                      const PopupMenuItem(
-                        value: _FolderMenuAction.rename,
-                        child: Text('Rename collection'),
-                      ),
-                    );
-                  }
-
-                  items.add(
-                    const PopupMenuItem(
-                      value: _FolderMenuAction.cover,
-                      child: Text('Change cover photo'),
+        return Column(
+          children: [
+            // Header row with back + title + menu
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      setState(() => _showFolders = true);
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    folderName,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
-                  );
+                  ),
+                  const Spacer(),
 
-                  if (!isAll) {
-                    items.add(
-                      const PopupMenuItem(
-                        value: _FolderMenuAction.delete,
-                        child: Text('Delete collection'),
+                  PopupMenuButton<_FolderMenuAction>(
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (action) async {
+                      switch (action) {
+                        case _FolderMenuAction.rename:
+                          await _renameFolder(uid, folderName);
+                          break;
+                        case _FolderMenuAction.cover:
+                          await _changeFolderCover(uid, folderName);
+                          break;
+                        case _FolderMenuAction.delete:
+                          await _confirmDeleteFolder(uid, folderName);
+                          break;
+                      }
+                    },
+                    itemBuilder: (ctx) {
+                      final itemsMenu = <PopupMenuEntry<_FolderMenuAction>>[];
+
+                      if (!isGeneral) {
+                        itemsMenu.add(
+                          const PopupMenuItem(
+                            value: _FolderMenuAction.rename,
+                            child: Text('Rename collection'),
+                          ),
+                        );
+                      }
+
+                      itemsMenu.add(
+                        const PopupMenuItem(
+                          value: _FolderMenuAction.cover,
+                          child: Text('Change cover photo'),
+                        ),
+                      );
+
+                      if (!isGeneral || canDeleteGeneral) {
+                        itemsMenu.add(
+                          const PopupMenuItem(
+                            value: _FolderMenuAction.delete,
+                            child: Text('Delete collection'),
+                          ),
+                        );
+                      }
+
+                      return itemsMenu;
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            Expanded(
+              child: Builder(
+                builder: (_) {
+                  if (snap.hasError) {
+                    return Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Error loading saved recipes: ${snap.error}',
                       ),
                     );
                   }
 
-                  return items;
-                },
-              ),
-            ],
-          ),
-        ),
+                  if (snap.connectionState == ConnectionState.waiting &&
+                      items.isEmpty) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-        Expanded(
-          child: StreamBuilder<List<Recipe>>(
-            stream: _saved.savedRecipes(uid, folder: _selectedFolder),
-            builder: (context, snap) {
-              if (snap.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'Error loading saved recipes: ${snap.error}',
-                  ),
-                );
-              }
-
-              if (snap.connectionState == ConnectionState.waiting &&
-                  (snap.data == null || snap.data!.isEmpty)) {
-                return const Center(
-                  child: CircularProgressIndicator(),
-                );
-              }
-
-              final items = snap.data ?? [];
-
-              if (items.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.bookmark_border,
-                        size: 56,
-                        color: Colors.brown.shade300,
+                  if (items.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.bookmark_border,
+                            size: 56,
+                            color: Colors.brown.shade300,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            isGeneral
+                                ? 'No saved recipes yet'
+                                : 'No recipes in "$folderName" yet',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Tap the bookmark icon on any recipe to save it.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _selectedFolder == null
-                            ? 'No saved recipes yet'
-                            : 'No recipes in "${_selectedFolder!}" yet',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Tap the bookmark icon on any recipe to save it here.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                );
-              }
+                    );
+                  }
 
-              return GridView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 3 / 4,
-                ),
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final r = items[index];
-                  final imageUrl =
-                      r.imageUrls.isNotEmpty ? r.imageUrls.first : null;
+                  return GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                      childAspectRatio: 3 / 4,
+                    ),
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      final r = items[index];
+                      final imageUrl =
+                          r.imageUrls.isNotEmpty ? r.imageUrls.first : null;
 
-                  return _SavedRecipeTile(
-                    recipe: r,
-                    imageUrl: imageUrl,
-                    uid: uid,
+                      return _SavedRecipeTile(
+                        recipe: r,
+                        imageUrl: imageUrl,
+                        uid: uid,
+                        currentFolder: folderName, // ✅ IMPORTANT
+                      );
+                    },
                   );
                 },
-              );
-            },
-          ),
-        ),
-      ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -333,7 +292,6 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
   //  HELPERS
   // =======================
 
-  /// Dialog: create an empty folder (no recipes yet).
   Future<void> _createFolderDialog(String uid) async {
     final controller = TextEditingController();
 
@@ -341,7 +299,7 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
       context: context,
       builder: (dialogCtx) {
         return AlertDialog(
-          title: const Text('New folder'),
+          title: const Text('New collection'),
           content: TextField(
             controller: controller,
             autofocus: true,
@@ -374,15 +332,12 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Folder "$name" created'),
+        content: Text('Collection "$name" created'),
         duration: const Duration(milliseconds: 900),
       ),
     );
   }
 
-  /// Confirm and delete a folder metadata doc.
-  ///
-  /// This does NOT delete saved recipes – they will still appear under "All".
   Future<void> _confirmDeleteFolder(String uid, String folderName) async {
     final shouldDelete = await showDialog<bool>(
           context: context,
@@ -390,8 +345,9 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
             return AlertDialog(
               title: const Text('Delete collection?'),
               content: Text(
-                'This will remove the collection "$folderName". '
-                'Saved recipes will stay in "All".',
+                folderName == SavedService.generalFolder
+                    ? 'This will delete "General". You can only do this when it is empty.'
+                    : 'This will remove the collection "$folderName". Saved recipes will stay saved.',
               ),
               actions: [
                 TextButton(
@@ -410,7 +366,18 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
 
     if (!shouldDelete) return;
 
-    await _saved.deleteFolder(uid: uid, folderName: folderName);
+    try {
+      await _saved.deleteFolder(uid: uid, folderName: folderName);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          duration: const Duration(milliseconds: 1400),
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -420,17 +387,17 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
       ),
     );
 
-    // If we were viewing this folder, go back to grid
     if (_selectedFolder == folderName) {
       setState(() {
-        _selectedFolder = null;
+        _selectedFolder = SavedService.generalFolder;
         _showFolders = true;
       });
     }
   }
 
-  /// Rename folder (edit collection name).
   Future<void> _renameFolder(String uid, String currentName) async {
+    if (currentName == SavedService.generalFolder) return;
+
     final controller = TextEditingController(text: currentName);
 
     final newName = await showDialog<String>(
@@ -441,9 +408,7 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Collection name',
-            ),
+            decoration: const InputDecoration(hintText: 'Collection name'),
           ),
           actions: [
             TextButton(
@@ -464,6 +429,7 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
     );
 
     if (newName == null) return;
+
     final trimmed = newName.trim();
     if (trimmed.isEmpty || trimmed == currentName) return;
 
@@ -474,9 +440,7 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
     );
 
     if (!mounted) return;
-    setState(() {
-      _selectedFolder = trimmed;
-    });
+    setState(() => _selectedFolder = trimmed);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -486,17 +450,15 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
     );
   }
 
-  /// Allows user to upload/change a folder cover photo (including "All").
   Future<void> _changeFolderCover(String uid, String folderName) async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
 
     final bytes = await picked.readAsBytes();
-    final storageRef = FirebaseStorage.instance
-        .ref()
-        .child(
-            'users/$uid/folder_covers/${DateTime.now().millisecondsSinceEpoch}_${picked.name}');
+    final storageRef = FirebaseStorage.instance.ref().child(
+          'users/$uid/folder_covers/${DateTime.now().millisecondsSinceEpoch}_${picked.name}',
+        );
 
     await storageRef.putData(bytes);
     final url = await storageRef.getDownloadURL();
@@ -511,8 +473,8 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          folderName == 'All'
-              ? 'Updated cover for All'
+          folderName == SavedService.generalFolder
+              ? 'Updated cover for General'
               : 'Updated cover for "$folderName"',
         ),
         duration: const Duration(milliseconds: 900),
@@ -525,7 +487,6 @@ class _SavedRecipesPageState extends State<SavedRecipesPage> {
 //  UI WIDGETS
 // =======================
 
-/// Big folder tile that looks like the recipe cards (2-column grid).
 class _FolderGridTile extends StatelessWidget {
   const _FolderGridTile({
     required this.label,
@@ -550,18 +511,13 @@ class _FolderGridTile extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             if (imageUrl != null)
-              Image.network(
-                imageUrl!,
-                fit: BoxFit.cover,
-              )
+              Image.network(imageUrl!, fit: BoxFit.cover)
             else
               Container(
                 color: Colors.brown.shade100,
                 alignment: Alignment.center,
                 child: const Icon(Icons.restaurant, size: 32),
               ),
-
-            // Gradient overlay
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -576,8 +532,6 @@ class _FolderGridTile extends StatelessWidget {
                 ),
               ),
             ),
-
-            // Label + subtitle
             Positioned(
               left: 10,
               right: 10,
@@ -619,11 +573,13 @@ class _SavedRecipeTile extends StatelessWidget {
     required this.recipe,
     required this.imageUrl,
     required this.uid,
+    required this.currentFolder, // ✅ add
   });
 
   final Recipe recipe;
   final String? imageUrl;
   final String uid;
+  final String currentFolder; // ✅ add
 
   @override
   Widget build(BuildContext context) {
@@ -643,18 +599,13 @@ class _SavedRecipeTile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Image
             imageUrl == null
                 ? Container(
                     color: Colors.brown.shade100,
                     alignment: Alignment.center,
                     child: const Icon(Icons.restaurant, size: 32),
                   )
-                : Image.network(
-                    imageUrl!,
-                    fit: BoxFit.cover,
-                  ),
-            // Gradient overlay bottom for text + icon
+                : Image.network(imageUrl!, fit: BoxFit.cover),
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -669,13 +620,11 @@ class _SavedRecipeTile extends StatelessWidget {
                 ),
               ),
             ),
-            // Title + unsave icon
             Positioned(
               left: 10,
               right: 10,
               bottom: 8,
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
                     child: Text(
@@ -689,12 +638,57 @@ class _SavedRecipeTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  InkWell(
+
+                  // ✅ IMPORTANT: remove from folder OR remove everywhere w/ confirm
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () async {
-                      await svc.removeSaved(
-                        uid: uid,
-                        recipeId: recipe.id,
-                      );
+                      // Stop the tile tap from firing
+                      // (GestureDetector already prevents InkWell onTap most of the time)
+                      // but this makes it feel consistent.
+                      if (currentFolder != SavedService.generalFolder) {
+                        await svc.toggleInFolder(
+                          uid: uid,
+                          recipe: recipe,
+                          folderName: currentFolder,
+                        );
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Removed from "$currentFolder"'),
+                              duration: const Duration(milliseconds: 800),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+
+                      final ok = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text("Remove from saved?"),
+                              content: const Text(
+                                'This will remove this recipe from General and from ALL of your collections.\n\nAre you sure?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text("Cancel"),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text("Remove"),
+                                ),
+                              ],
+                            ),
+                          ) ??
+                          false;
+
+                      if (!ok) return;
+
+                      await svc.removeSaved(uid: uid, recipeId: recipe.id);
+
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(

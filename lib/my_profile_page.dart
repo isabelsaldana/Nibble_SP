@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'pages/follow_lists_page.dart';
 import 'profile_edit.dart';
 import 'widgets/my_recipes_section.dart';
 
@@ -50,8 +51,9 @@ class MyProfilePage extends StatelessWidget {
             ? (data['updatedAt'] as Timestamp).millisecondsSinceEpoch
             : DateTime.now().millisecondsSinceEpoch;
 
-        final bustedUrl =
-            (photo != null && photo.isNotEmpty) ? _cacheBust(photo, updatedAtMs) : null;
+        final bustedUrl = (photo != null && photo.isNotEmpty)
+            ? _cacheBust(photo, updatedAtMs)
+            : null;
 
         return Scaffold(
           appBar: AppBar(
@@ -83,12 +85,13 @@ class MyProfilePage extends StatelessWidget {
                                   width: 96,
                                   height: 96,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      _Initial(displayName: displayName, email: me.email),
+                                  errorBuilder: (_, __, ___) => _Initial(
+                                    displayName: displayName,
+                                    email: me.email,
+                                  ),
                                 ),
                               ),
                       ),
-
                       const SizedBox(height: 12),
 
                       Text(
@@ -98,7 +101,6 @@ class MyProfilePage extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-
                       const SizedBox(height: 4),
 
                       Text(
@@ -108,40 +110,6 @@ class MyProfilePage extends StatelessWidget {
                           color: Colors.black54,
                         ),
                       ),
-Row(
-  mainAxisAlignment: MainAxisAlignment.center,
-  children: [
-    // Followers
-    Column(
-      children: [
-        Text(
-          (data["followerCount"] ?? 0).toString(),
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        const Text("Followers"),
-      ],
-    ),
-    const SizedBox(width: 24),
-
-    // Following
-    Column(
-      children: [
-        Text(
-          (data["followingCount"] ?? 0).toString(),
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        const Text("Following"),
-      ],
-    ),
-  ],
-),
-const SizedBox(height: 20),
 
                       if (bio.isNotEmpty) ...[
                         const SizedBox(height: 8),
@@ -152,6 +120,9 @@ const SizedBox(height: 20),
                         ),
                       ],
 
+                      // ✅ Followers / Following row
+                      const SizedBox(height: 12),
+                      _MyConnectionsRow(uid: me.uid),
                       const SizedBox(height: 16),
                     ],
                   ),
@@ -161,12 +132,15 @@ const SizedBox(height: 20),
               // ---------- Edit PROFILE ----------
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: FilledButton.icon(
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const ProfileEditPage()),
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileEditPage(),
+                        ),
                       );
                     },
                     icon: const Icon(Icons.edit_outlined),
@@ -185,7 +159,6 @@ const SizedBox(height: 20),
                   ),
                 ),
               ),
-
               const SliverToBoxAdapter(child: SizedBox(height: 8)),
 
               SliverToBoxAdapter(
@@ -234,6 +207,86 @@ class _Initial extends StatelessWidget {
         fontSize: 36,
         fontWeight: FontWeight.bold,
       ),
+    );
+  }
+}
+
+/* ---------------------------------------------------------
+   FOLLOWERS / FOLLOWING COUNTS (tap opens FollowListsPage)
+--------------------------------------------------------- */
+
+class _MyConnectionsRow extends StatelessWidget {
+  const _MyConnectionsRow({required this.uid});
+  final String uid;
+
+  @override
+  Widget build(BuildContext context) {
+    final followersStream = FirebaseFirestore.instance
+        .collection("users")
+        .doc(uid)
+        .collection("followers")
+        .snapshots();
+
+    final followingStream = FirebaseFirestore.instance
+        .collection("users")
+        .doc(uid)
+        .collection("following")
+        .snapshots();
+
+    Widget countButton({
+      required Stream<QuerySnapshot> stream,
+      required String label,
+      required int tabIndex, // 0=Followers, 1=Following
+    }) {
+      return Expanded(
+        child: InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FollowListsPage(
+                  uid: uid,
+                  initialIndex: tabIndex,
+                  isOwner: true,
+                ),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: stream,
+              builder: (context, snap) {
+                final count = snap.data?.docs.length ?? 0;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      "$count",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      label,
+                      style: TextStyle(color: Colors.brown.shade600),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        countButton(stream: followersStream, label: "Followers", tabIndex: 0),
+        countButton(stream: followingStream, label: "Following", tabIndex: 1),
+      ],
     );
   }
 }

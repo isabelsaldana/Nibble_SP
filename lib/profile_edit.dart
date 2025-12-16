@@ -5,7 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:crop_your_image/crop_your_image.dart';
-import 'pages/trash_page.dart'; 
 
 class ProfileEditPage extends StatefulWidget {
   const ProfileEditPage({super.key});
@@ -31,9 +30,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   bool _saving = false;
   bool _loading = true;
 
-  Uint8List? _pickedBytes;   // cropped PNG bytes (preview + upload)
-  XFile? _pickedFile;        // original file, optional
-  String? _photoURL;         // saved URL
+  Uint8List? _pickedBytes; // cropped PNG bytes (preview + upload)
+  XFile? _pickedFile; // original file, optional
+  String? _photoURL; // saved URL
 
   @override
   void initState() {
@@ -52,8 +51,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
         await FirebaseFirestore.instance.collection('users').doc(me.uid).get();
     final m = doc.data() ?? {};
 
-    _displayName.text =
-        (m['displayName'] ?? me.displayName ?? '').toString();
+    _displayName.text = (m['displayName'] ?? me.displayName ?? '').toString();
     _username.text = (m['username'] ?? '').toString();
     _bio.text = (m['bio'] ?? '').toString();
 
@@ -68,16 +66,13 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
     _dietary
       ..clear()
-      ..addAll(((m['dietary'] ?? const []) as List)
-          .map((e) => e.toString()));
+      ..addAll(((m['dietary'] ?? const []) as List).map((e) => e.toString()));
     _allergens
       ..clear()
-      ..addAll(((m['allergens'] ?? const []) as List)
-          .map((e) => e.toString()));
+      ..addAll(((m['allergens'] ?? const []) as List).map((e) => e.toString()));
     _cuisines
       ..clear()
-      ..addAll(((m['cuisines'] ?? const []) as List)
-          .map((e) => e.toString()));
+      ..addAll(((m['cuisines'] ?? const []) as List).map((e) => e.toString()));
 
     _photoURL = (m['photoURL'] ?? me.photoURL)?.toString();
     setState(() => _loading = false);
@@ -236,7 +231,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
         'notifyFollows': _notifyFollows,
         'notifySaves': _notifySaves,
         'photoURL': newPhotoURL,
-        'updatedAt': FieldValue.serverTimestamp(), // for cache-bust
+        'updatedAt': FieldValue.serverTimestamp(),
       };
 
       await FirebaseFirestore.instance
@@ -314,8 +309,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                                 ? NetworkImage(_photoURL!) as ImageProvider
                                 : null,
                         child: (_pickedBytes == null &&
-                                (_photoURL == null ||
-                                    _photoURL!.isEmpty))
+                                (_photoURL == null || _photoURL!.isEmpty))
                             ? Text(
                                 (_displayName.text.isEmpty
                                         ? (email.isNotEmpty ? email[0] : 'N')
@@ -352,7 +346,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
               ),
             ),
 
-            // --- form sections ---
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               sliver: SliverToBoxAdapter(
@@ -387,8 +380,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                             controller: _bio,
                             maxLength: 160,
                             maxLines: 3,
-                            decoration:
-                                _input.copyWith(labelText: 'Bio'),
+                            decoration: _input.copyWith(labelText: 'Bio'),
                           ),
                         ],
                       ),
@@ -486,10 +478,10 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                                       child: Text('Metric'),
                                     ),
                                   ],
-                                  onChanged: (v) => setState(
-                                      () => _units = v ?? 'us'),
-                                  decoration: _input.copyWith(
-                                      labelText: 'Units'),
+                                  onChanged: (v) =>
+                                      setState(() => _units = v ?? 'us'),
+                                  decoration:
+                                      _input.copyWith(labelText: 'Units'),
                                 ),
                               ),
                             ],
@@ -509,53 +501,30 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                                 setState(() => _profilePublic = v),
                           ),
                           SwitchListTile(
-                            title: const Text(
-                                'Show saved recipes on profile'),
+                            title:
+                                const Text('Show saved recipes on profile'),
                             value: _showSaved,
                             onChanged: (v) =>
                                 setState(() => _showSaved = v),
                           ),
-
                           const Divider(height: 24),
-                          ListTile(
-                            leading:
-                                const Icon(Icons.delete_outline),
-                            title: const Text('Recently Deleted Recipes'),
-                            subtitle: const Text(
-                                'View and restore deleted recipes'),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const TrashPage(),
-                                ),
-                              );
-                            },
-                          ),
-
-                          const Divider(height: 24),
-
                           CheckboxListTile(
-                            title:
-                                const Text('Notify on comments'),
+                            title: const Text('Notify on comments'),
                             value: _notifyComments,
                             onChanged: (v) => setState(
                                 () => _notifyComments = v ?? true),
                           ),
                           CheckboxListTile(
-                            title:
-                                const Text('Notify on follows'),
+                            title: const Text('Notify on follows'),
                             value: _notifyFollows,
                             onChanged: (v) => setState(
                                 () => _notifyFollows = v ?? true),
                           ),
                           CheckboxListTile(
-                            title:
-                                const Text('Notify on saves'),
+                            title: const Text('Notify on saves'),
                             value: _notifySaves,
-                            onChanged: (v) => setState(
-                                () => _notifySaves = v ?? true),
+                            onChanged: (v) =>
+                                setState(() => _notifySaves = v ?? true),
                           ),
                         ],
                       ),
@@ -582,15 +551,12 @@ class _Header extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    const brownLight = Color(0xFFB59986);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 88, 16, 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [cs.primary, cs.primary.withOpacity(.6)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
+      decoration: const BoxDecoration(
+        color: brownLight, // ✅ solid brown
       ),
       child: child,
     );

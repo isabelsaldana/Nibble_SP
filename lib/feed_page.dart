@@ -5,8 +5,12 @@ import 'package:flutter/material.dart';
 
 import 'models/recipe.dart';
 import 'pages/view_recipe_page.dart';
+import 'pages/comments_page.dart';
 import 'public_profile_page.dart';
 import 'services/saved_service.dart';
+
+// ✅ NEW
+import 'moderation/likes_sheet.dart';
 
 String _timeAgo(DateTime? dt) {
   if (dt == null) return '';
@@ -17,6 +21,13 @@ String _timeAgo(DateTime? dt) {
   if (diff.inHours < 24) return '${diff.inHours}h ago';
   if (diff.inDays < 7) return '${diff.inDays}d ago';
   return '${diff.inDays ~/ 7}w ago';
+}
+
+// ✅ IG-ish count formatting (34.8K, 1.2M)
+String _compactCount(int n) {
+  if (n < 1000) return '$n';
+  if (n < 1000000) return '${(n / 1000).toStringAsFixed(n < 10000 ? 1 : 0)}K';
+  return '${(n / 1000000).toStringAsFixed(n < 10000000 ? 1 : 0)}M';
 }
 
 class FeedPage extends StatelessWidget {
@@ -31,7 +42,18 @@ class FeedPage extends StatelessWidget {
         .snapshots();
 
     return Scaffold(
-      body: StreamBuilder(
+      // ✅ ADD THIS APP BAR (centered logo)
+      appBar: AppBar(
+        centerTitle: true,
+        automaticallyImplyLeading: false, // keeps it truly centered
+        title: Image.asset(
+          'assets/branding/nibble_wordmark.png', // ✅ your logo asset path
+          height: 28,
+          fit: BoxFit.contain,
+        ),
+      ),
+
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: stream,
         builder: (context, snap) {
           if (snap.hasError) {
@@ -71,28 +93,12 @@ class _FeedRecipeCard extends StatefulWidget {
 
 class _FeedRecipeCardState extends State<_FeedRecipeCard> {
   final _savedSvc = SavedService();
-  bool _isSaved = false;
   bool _liked = false;
-  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialSavedState();
     _loadLike();
-  }
-
-  Future<void> _loadInitialSavedState() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final saved = await _savedSvc.isSaved(
-      uid: user.uid,
-      recipeId: widget.recipe.id,
-    );
-
-    if (!mounted) return;
-    setState(() => _isSaved = saved);
   }
 
   Future<void> _loadLike() async {
@@ -130,6 +136,26 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
     setState(() => _liked = !_liked);
   }
 
+  // ✅ IG-style Comments Sheet
+  Future<void> _openComments() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => FractionallySizedBox(
+        heightFactor: 0.92,
+        child: CommentsPage(
+          recipeId: widget.recipe.id,
+          recipeTitle: widget.recipe.title,
+        ),
+      ),
+    );
+  }
+
   Future<void> _onSavePressed() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
@@ -140,47 +166,206 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
       return;
     }
 
-    if (_isSaved) {
-      setState(() => _loading = true);
-      await _savedSvc.removeSaved(uid: uid, recipeId: widget.recipe.id);
-      if (!mounted) return;
-      setState(() => _isSaved = false);
-      setState(() => _loading = false);
-      return;
-    }
+    await _savedSvc.ensureSaved(uid: uid, recipe: widget.recipe);
+    if (!mounted) return;
 
-    await _showSaveBottomSheet(uid);
+    await _showSaveCollectionsSheet(uid: uid, recipe: widget.recipe);
   }
 
-  Future<void> _showSaveBottomSheet(String uid) async {
+  Future<void> _showSaveCollectionsSheet({
+    required String uid,
+    required Recipe recipe,
+  }) async {
     await showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetCtx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text("Folder UI unchanged for this example"),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: _savedSvc.savedDocStream(uid, recipe.id),
+              builder: (context, savedSnap) {
+                final savedExists = savedSnap.data?.exists == true;
+                final data = savedSnap.data?.data() ?? {};
+
+                final foldersRaw = data['folders'];
+                final folders = (foldersRaw is List)
+                    ? foldersRaw.map((e) => e.toString()).toList()
+                    : <String>[SavedService.generalFolder];
+
+                bool inFolder(String name) => folders.contains(name);
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 5,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Save to…",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    ListTile(
+                      leading: const Icon(Icons.bookmark),
+                      title: const Text("General (All recipes)"),
+                      subtitle: const Text("Always included when you save"),
+                      trailing: const Icon(Icons.lock, size: 18),
+                      onTap: () async {
+                        await _savedSvc.ensureSaved(uid: uid, recipe: recipe);
+                      },
+                    ),
+
+                    const Divider(),
+
+                    StreamBuilder<List<FolderPreview>>(
+                      stream: _savedSvc.folderPreviews(uid),
+                      builder: (context, folderSnap) {
+                        final all = folderSnap.data ?? [];
+                        final foldersOnly = all
+                            .where((f) => f.name != SavedService.generalFolder)
+                            .toList();
+
+                        return Flexible(
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: [
+                              for (final f in foldersOnly)
+                                ListTile(
+                                  leading: const Icon(Icons.folder_outlined),
+                                  title: Text(f.name),
+                                  trailing: inFolder(f.name)
+                                      ? const Icon(Icons.check, size: 18)
+                                      : null,
+                                  onTap: () async {
+                                    await _savedSvc.toggleInFolder(
+                                      uid: uid,
+                                      recipe: recipe,
+                                      folderName: f.name,
+                                    );
+                                  },
+                                ),
+
+                              const Divider(),
+
+                              ListTile(
+                                leading: const Icon(Icons.add),
+                                title: const Text("New collection"),
+                                onTap: () async {
+                                  final name = await _askForFolderName(sheetCtx);
+                                  if (name == null || name.trim().isEmpty) return;
+
+                                  final trimmed = name.trim();
+                                  await _savedSvc.createFolder(uid: uid, name: trimmed);
+
+                                  await _savedSvc.toggleInFolder(
+                                    uid: uid,
+                                    recipe: recipe,
+                                    folderName: trimmed,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: savedExists
+                              ? () async {
+                                  await _savedSvc.removeSaved(
+                                    uid: uid,
+                                    recipeId: recipe.id,
+                                  );
+                                  if (Navigator.of(sheetCtx).canPop()) {
+                                    Navigator.of(sheetCtx).pop();
+                                  }
+                                }
+                              : null,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text("Remove"),
+                        ),
+                        const Spacer(),
+                        FilledButton(
+                          onPressed: () {
+                            if (Navigator.of(sheetCtx).canPop()) {
+                              Navigator.of(sheetCtx).pop();
+                            }
+                          },
+                          child: const Text("Done"),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         );
       },
     );
   }
 
+  Future<String?> _askForFolderName(BuildContext ctx) async {
+    final controller = TextEditingController();
+
+    final res = await showDialog<String>(
+      context: ctx,
+      builder: (_) => AlertDialog(
+        title: const Text("New collection"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "e.g., Dinner ideas"),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text("Create"),
+          ),
+        ],
+      ),
+    );
+
+    return res;
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = widget.recipe;
     final imageUrl = r.imageUrls.isNotEmpty ? r.imageUrls.first : null;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return InkWell(
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => ViewRecipePage(recipe: r),
-          ),
+          MaterialPageRoute(builder: (_) => ViewRecipePage(recipe: r)),
         );
       },
       child: Card(
@@ -190,7 +375,6 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ------------------ IMAGE ------------------
             Hero(
               tag: 'recipe_${r.id}',
               child: AspectRatio(
@@ -203,15 +387,12 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                     : Image.network(imageUrl, fit: BoxFit.cover),
               ),
             ),
-
-            // ------------------ CONTENT ------------------
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ------------------ AUTHOR ROW ------------------
-                  FutureBuilder(
+                  FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                     future: FirebaseFirestore.instance
                         .collection("users")
                         .doc(r.authorId)
@@ -219,17 +400,21 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                     builder: (_, snap) {
                       final u = snap.data?.data();
 
-                      final photo = u?["photo"];
-                      final displayName = u?["displayName"] ?? "User";
-                      final username = u?["username"] ?? "";
+                      final photo = (u?["photo"] ?? u?["photoUrl"] ?? u?["photoURL"])
+                          ?.toString()
+                          .trim();
+                      final hasPhoto = photo != null && photo.isNotEmpty;
+
+                      final displayName =
+                          (u?["displayName"] ?? u?["username"] ?? "User").toString();
+                      final username = (u?["username"] ?? "").toString();
 
                       return GestureDetector(
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  PublicProfilePage(uid: widget.recipe.authorId),
+                              builder: (_) => PublicProfilePage(uid: r.authorId),
                             ),
                           );
                         },
@@ -237,49 +422,30 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                           children: [
                             CircleAvatar(
                               radius: 16,
-                              backgroundImage:
-                                  (photo != null && photo.toString().isNotEmpty)
-                                      ? NetworkImage(photo)
-                                      : null,
-                              child: photo == null
-                                  ? const Icon(Icons.person, size: 18)
-                                  : null,
+                              backgroundImage: hasPhoto ? NetworkImage(photo!) : null,
+                              child: !hasPhoto ? const Icon(Icons.person, size: 18) : null,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               displayName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              "@$username",
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
+                            if (username.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Text("@$username",
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            ],
                           ],
                         ),
                       );
                     },
                   ),
-
                   const SizedBox(height: 12),
-
-                  // ------------------ TITLE ------------------
                   Text(
                     r.title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                   ),
-
-                  if (r.description != null &&
-                      r.description!.trim().isNotEmpty) ...[
+                  if (r.description != null && r.description!.trim().isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       r.description!,
@@ -287,37 +453,62 @@ class _FeedRecipeCardState extends State<_FeedRecipeCard> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-
                   const SizedBox(height: 12),
 
-                  // ------------------ FOOTER ROW ------------------
                   Row(
                     children: [
                       Text(
                         "Public • ${_timeAgo(r.createdAt)}",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.brown.shade400,
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.brown.shade400),
                       ),
                       const Spacer(),
-                      StreamBuilder(
-  stream: FirebaseFirestore.instance
-      .collection('recipes')
-      .doc(r.id)
-      .collection('likes')
-      .snapshots(),
-  builder: (context, snap) {
-    final count = snap.data?.docs.length ?? 0;
-    return Text(
-      "$count",
-      style: const TextStyle(fontSize: 13),
-    );
-  },
-),
-const SizedBox(width: 4),
 
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('recipes')
+                            .doc(r.id)
+                            .collection('comments')
+                            .snapshots(),
+                        builder: (context, snap) {
+                          final count = snap.data?.docs.length ?? 0;
+                          return Row(
+                            children: [
+                              InkWell(
+                                onTap: _openComments,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+                                  child: Text(_compactCount(count),
+                                      style: const TextStyle(fontSize: 13)),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Comments',
+                                icon: const Icon(Icons.chat_bubble_outline),
+                                onPressed: _openComments,
+                              ),
+                            ],
+                          );
+                        },
+                      ),
 
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('recipes')
+                            .doc(r.id)
+                            .collection('likes')
+                            .snapshots(),
+                        builder: (context, snap) {
+                          final count = snap.data?.docs.length ?? 0;
+                          return InkWell(
+                            onTap: () => LikesSheet.open(context, recipeId: r.id),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+                              child: Text(_compactCount(count),
+                                  style: const TextStyle(fontSize: 13)),
+                            ),
+                          );
+                        },
+                      ),
                       IconButton(
                         icon: Icon(
                           _liked ? Icons.favorite : Icons.favorite_border,
@@ -326,14 +517,24 @@ const SizedBox(width: 4),
                         onPressed: _toggleLike,
                       ),
 
-                      IconButton(
-                        icon: Icon(
-                          _isSaved
-                              ? Icons.bookmark
-                              : Icons.bookmark_border_outlined,
+                      if (uid != null)
+                        StreamBuilder<bool>(
+                          stream: _savedSvc.isSavedStream(uid, r.id),
+                          builder: (context, snap) {
+                            final isSaved = snap.data ?? false;
+                            return IconButton(
+                              icon: Icon(isSaved
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border_outlined),
+                              onPressed: _onSavePressed,
+                            );
+                          },
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.bookmark_border_outlined),
+                          onPressed: _onSavePressed,
                         ),
-                        onPressed: _onSavePressed,
-                      ),
                     ],
                   ),
                 ],

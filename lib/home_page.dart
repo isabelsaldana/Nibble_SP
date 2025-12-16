@@ -28,7 +28,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _selectedIndex = widget.initialTab;
+    _selectedIndex = widget.initialTab.clamp(0, 4);
   }
 
   @override
@@ -43,8 +43,8 @@ class _HomePageState extends State<HomePage> {
           setState(() => _selectedIndex = 4);
         },
       ),
-      SavedRecipesPage(),
-      MyProfilePage(),
+      const SavedRecipesPage(),
+      MyProfilePage(), // ✅ MyProfilePage is not const in your project
     ];
 
     return Scaffold(
